@@ -22,6 +22,12 @@ export function expReward(baseExp, enemyLevel, playerLevel, danger = 1) {
   return Math.max(1, Math.round(baseExp * levelFactor * danger));
 }
 
+export function goldReward(baseGold, enemyLevel, playerLevel, danger, rng, rewardRate = 1) {
+  const levelFactor = clamp(1 + (enemyLevel - playerLevel) * 0.1, 0.2, 2.25);
+  const variance = 0.9 + rng.next() * 0.2;
+  return Math.max(1, Math.round(baseGold * levelFactor * danger * variance * rewardRate));
+}
+
 export function expToNext(level) {
   return Math.round(30 + 18 * Math.pow(level, 1.35));
 }
@@ -31,7 +37,8 @@ export function disclosureScore(player, enemy, kills = 0, observation = 0) {
 }
 
 export function escapeChance(player, enemy, observation = 0) {
-  return clamp(0.5 + (player.spd - enemy.spd) / 100 + observation * 0.08, 0.2, 0.95);
+  const mercy = enemy.rank === 'aberrant' ? .18 : enemy.rank === 'elite' ? .1 : 0;
+  return clamp(0.5 + (player.spd - enemy.spd) / 100 + observation * 0.08 + mercy, 0.2, 0.95);
 }
 
 export function efficiency(exp, turns, hpLost, danger) {
@@ -44,4 +51,3 @@ export function growPlayer(player, rng) {
   for (const [stat, [min, max]] of Object.entries(CONFIG.playerGrowth)) growth[stat] = rng.int(min, max);
   return growth;
 }
-

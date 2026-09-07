@@ -1,5 +1,8 @@
 export const CONFIG = Object.freeze({
   eliteChance: 0.01,
+  strongEnemyChance: 0.03,
+  strongEnemyChanceCap: 0.1,
+  aberrantShare: 0.2,
   statVariance: 0.1,
   damageVariance: 0.1,
   guardReduction: 0.65,
@@ -13,4 +16,3 @@ export const CONFIG = Object.freeze({
     focus: { name: '集中解析', cost: 7 },
   },
 });
-

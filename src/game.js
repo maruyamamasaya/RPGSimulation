@@ -1,18 +1,20 @@
 import { CONFIG } from './config.js';
-import { advanceIntent, createEnemy, currentIntent } from './enemies.js';
-import { damage, disclosureScore, efficiency, escapeChance, expReward, expToNext, growPlayer } from './formulas.js';
+import { advanceIntent, createEnemy, currentIntent, telegraphText } from './enemies.js';
+import { damage, disclosureScore, efficiency, escapeChance, expReward, expToNext, goldReward, growPlayer } from './formulas.js';
 import { Rng } from './rng.js';
+import { createOwnedItem, initialShopProgress, itemById, rollDrop, shopItems } from './items.js';
 
 export function createPlayer() {
-  return { level: 1, maxHp: 100, hp: 100, atk: 12, def: 10, spd: 10, obs: 10, maxSp: 30, sp: 30, exp: 0 };
+  return { level: 1, maxHp: 100, hp: 100, atk: 12, def: 10, spd: 10, obs: 10, maxSp: 30, sp: 30, exp: 0,
+    baseStats: { maxHp:100, atk:12, def:10, spd:10, obs:10 }, gold:0, inventory:[], ownedItems:[], consumables:{}, equipment:{weapon:null,armor:null}, shopProgress:initialShopProgress(), newShopItems:[] };
 }
 
 export class Game {
-  constructor({ seed = Date.now(), meta = {}, eliteChance } = {}) {
+  constructor({ seed = Date.now(), meta = {}, eliteChance, savedState } = {}) {
     this.rng = new Rng(seed);
     this.eliteChance = eliteChance;
     this.meta = { bestFloor: Math.max(1, Number(meta.bestFloor) || 1), knowledge: { ...(meta.knowledge || {}) } };
-    this.startRun();
+    if (savedState) this.restore(savedState); else this.startRun();
   }
 
   startRun() {
@@ -24,27 +26,43 @@ export class Game {
     this.runExp = 0;
     this.totalTurns = 0;
     this.totalHpLost = 0;
+    this.sameFloorBattles = 0;
+    this.lastReward = null;
+    this.threat = 0;
+    this.itemCounter = 0;
+    this.battleMetrics = null;
     this.logs = ['演算灯を掲げ、終わりのない地下迷宮へ足を踏み入れた。'];
+    this.feedback = null;
+    this.feedbackId = 0;
     this.spawnEnemy();
   }
 
   spawnEnemy() {
-    this.enemy = createEnemy(this.floor, this.rng, { eliteChance: this.eliteChance });
+    const strongChance=this.eliteChance!==undefined?this.eliteChance:Math.min(CONFIG.strongEnemyChanceCap,CONFIG.strongEnemyChance+this.threat*.000625);
+    this.enemy = createEnemy(this.floor, this.rng, this.eliteChance!==undefined?{eliteChance:this.eliteChance}:{strongChance});
     this.observation = 0;
     this.turn = 1;
-    this.logs.unshift(this.enemy.elite ? '異質な気配を感じる――戦う必要はない。' : `${this.enemy.name}が道を塞いだ。`);
-    this.logs.unshift(`予兆：${currentIntent(this.enemy).telegraph}`);
+    this.battleMetrics={turns:0,unguardedUltimateHits:0,failedEscapes:0,itemsUsed:0};
+    this.logs.unshift(this.enemy.rank==='aberrant' ? '【危険個体】空間が歪んでいる。逃走は正しい判断だ。' : this.enemy.elite ? '【強敵】異質な気配を感じる――戦う必要はない。' : `${this.enemy.name}が道を塞いだ。`);
+    this.logs.unshift(`予兆：${telegraphText(this.enemy)}`);
     this.meta.bestFloor = Math.max(this.meta.bestFloor, this.floor);
   }
 
   get knowledge() { return this.meta.knowledge[this.enemy.id] || 0; }
   get disclosure() { return disclosureScore(this.player, this.enemy, this.knowledge, this.observation); }
   get efficiency() { return efficiency(this.runExp, this.totalTurns, this.totalHpLost, this.enemy?.danger || 1); }
+  get rewardRate() { return this.sameFloorBattles >= 8 ? .5 : this.sameFloorBattles >= 5 ? .75 : this.sameFloorBattles >= 3 ? .9 : 1; }
+  get strongEnemyChance() { return Math.min(CONFIG.strongEnemyChanceCap,CONFIG.strongEnemyChance+this.threat*.000625); }
+  get threatLabel() { return this.threat>=75?'異常':this.threat>=45?'危険':this.threat>=18?'不穏':'安定'; }
+  get recommendedAction() { return this.enemy?.rank==='aberrant'?'escape':null; }
 
   dispatch(action) {
     if (action === 'restart' && this.status === 'gameover') { this.startRun(); return; }
+    if (this.status === 'preparation') return this.preparationAction(action);
+    if (this.status === 'shop') return this.shopAction(action);
     if (this.status !== 'combat') return;
     const beforeHp = this.player.hp;
+    this.feedback = null;
     let guard = false;
     let enemyActs = true;
 
@@ -78,6 +96,7 @@ export class Game {
         enemyActs = false;
         this.spawnEnemy();
       } else this.addLog(`逃走に失敗した（成功率 ${Math.round(chance * 100)}%）。`);
+      if(enemyActs)this.battleMetrics.failedEscapes += 1;
     } else return;
 
     if (this.enemy.hp <= 0) {
@@ -88,6 +107,7 @@ export class Game {
     }
     if (enemyActs) this.enemyTurn(guard);
     this.totalTurns += 1;
+    this.battleMetrics.turns += 1;
     this.totalHpLost += Math.max(0, beforeHp - this.player.hp);
     if (this.player.hp <= 0) {
       this.player.hp = 0;
@@ -96,7 +116,7 @@ export class Game {
       return;
     }
     this.turn += 1;
-    this.addLog(`予兆：${currentIntent(this.enemy).telegraph}`);
+    this.addLog(`予兆：${telegraphText(this.enemy)}`);
   }
 
   spendSp(cost) {
@@ -110,6 +130,7 @@ export class Game {
     const dealt = damage(this.player.atk, this.enemy.def, multiplier, this.rng, reduction);
     this.enemy.hp = Math.max(0, this.enemy.hp - dealt);
     this.addLog(`${label}で${dealt}ダメージ。${this.enemy.guarded ? '敵の防御に阻まれた。' : ''}`);
+    this.feedback = { target: 'enemy', type: this.enemy.guarded ? 'block' : 'damage', amount: dealt, nonce: ++this.feedbackId };
     this.enemy.guarded = false;
   }
 
@@ -121,36 +142,152 @@ export class Game {
       this.addLog(`${this.enemy.name}は${intent.text}`);
     } else if (intent.id === 'rest') {
       this.addLog(`${this.enemy.name}は${intent.text} 今が好機だ。`);
+    } else if (intent.id === 'charge') {
+      this.addLog(`${this.enemy.name}は${intent.text} 次の行動に備えよう。`);
     } else {
-      const dealt = damage(this.enemy.atk, this.player.def, intent.multiplier, this.rng, guard ? 1 - CONFIG.guardReduction : 1);
+      const raw = intent.ultimate
+        ? Math.max(1, Math.round(this.player.maxHp * (0.76 + this.rng.next() * 0.08) + this.enemy.atk * 0.28))
+        : damage(this.enemy.atk, this.player.def, intent.multiplier, this.rng, 1);
+      const dealt = guard ? Math.max(1, Math.round(raw * (1 - CONFIG.guardReduction))) : raw;
+      const hpBefore = this.player.hp;
       this.player.hp = Math.max(0, this.player.hp - dealt);
-      this.addLog(`${this.enemy.name}は${intent.text} ${dealt}ダメージ${guard ? '（防御で軽減）' : ''}。`);
+      this.addLog(`${this.enemy.name}は${intent.text}`);
+      if (guard) this.addLog(`防御成功：本来ダメージ ${raw} → 防御後 ${dealt}。HP ${hpBefore} → ${this.player.hp}`);
+      else this.addLog(`本来ダメージ：${raw}。HP ${hpBefore} → ${this.player.hp}${intent.ultimate ? '（予兆された危険攻撃）' : ''}`);
+      if(intent.ultimate&&!guard)this.battleMetrics.unguardedUltimateHits += 1;
+      this.feedback = { target: 'player', type: guard ? 'block' : 'damage', amount: dealt, raw, nonce: ++this.feedbackId };
     }
-    advanceIntent(this.enemy);
+    advanceIntent(this.enemy, this.rng);
   }
 
   win() {
-    const reward = expReward(18 + this.enemy.level * 8, this.enemy.level, this.player.level, this.enemy.danger);
+    const rankMultiplier=this.enemy.rank==='aberrant'?18:this.enemy.rank==='elite'?10:1;
+    const reward = Math.max(1, Math.round(expReward(18 + this.enemy.level * 8, this.enemy.level, this.player.level, this.enemy.archetype.danger) * this.rewardRate * rankMultiplier));
+    const gold = goldReward(this.enemy.archetype.baseGold, this.enemy.level, this.player.level, this.enemy.archetype.danger, this.rng, this.rewardRate) * rankMultiplier;
     this.player.exp += reward;
+    this.player.gold += gold;
     this.runExp += reward;
     this.meta.knowledge[this.enemy.id] = this.knowledge + 1;
-    this.addLog(`${this.enemy.name}を倒し、${reward} EXPを得た。`);
+    const drop=rollDrop(this.enemy,this.floor,this.rng,++this.itemCounter);
+    if(drop){const def=itemById(drop.definitionId);if(def.type==='consumable')this.player.consumables[def.id]=(this.player.consumables[def.id]||0)+1;else{this.player.ownedItems.push(drop);this.player.inventory.push(def.id)}this.addLog(`DROP：${def.name}（${def.rarity.toUpperCase()}）`)}
+    this.updateThreat();
+    this.addLog(`${this.enemy.elite?'強敵撃破！ ':'勝利！'}EXP +${reward} / Gold +${gold}（報酬率 ${Math.round(this.rewardRate*100)}%）`);
+    this.lastReward = { exp:reward, gold, rate:this.rewardRate, drop, rank:this.enemy.rank };
     while (this.player.exp >= expToNext(this.player.level)) {
       this.player.exp -= expToNext(this.player.level);
       this.levelUp();
     }
-    this.floor += 1;
-    this.spawnEnemy();
+    this.status = 'preparation';
   }
 
   levelUp() {
     const growth = growPlayer(this.player, this.rng);
     this.player.level += 1;
-    for (const stat of ['atk', 'def', 'spd', 'obs', 'maxSp']) this.player[stat] += growth[stat];
-    this.player.maxHp += growth.hp;
+    for (const stat of ['atk', 'def', 'spd', 'obs']) this.player.baseStats[stat] += growth[stat];
+    this.player.maxSp += growth.maxSp;
+    this.player.baseStats.maxHp += growth.hp;
+    this.recalculateEquipment();
     this.player.hp = this.player.maxHp;
     this.player.sp = this.player.maxSp;
     this.addLog(`レベル${this.player.level}へ！ HP+${growth.hp} ATK+${growth.atk} DEF+${growth.def} SPD+${growth.spd} OBS+${growth.obs}`);
+  }
+
+  preparationAction(action) {
+    this.feedback = null;
+    if (action === 'advance') {
+      this.floor += 1; this.sameFloorBattles = 0; this.status = 'combat'; this.spawnEnemy();
+    } else if (action === 'train') {
+      this.sameFloorBattles += 1; this.threat=Math.max(0,this.threat-3); this.status = 'combat'; this.spawnEnemy();
+    } else if (action === 'openShop') this.status = 'shop';
+    else if (action === 'usePotion') this.useConsumable();
+    else if (action.startsWith('use:')) this.useConsumable(action.slice(4));
+  }
+
+  shopAction(action) {
+    if (action === 'closeShop') { this.status = 'preparation'; return; }
+    const [verb, id] = action.split(':');
+    if (verb === 'buy') this.buy(id);
+    else if (verb === 'equip') this.equip(id);
+  }
+
+  buy(id) {
+    const item = itemById(id);
+    if (!item || !shopItems(this.floor,this.player.shopProgress).some(entry => entry.id === id)) return false;
+    if(item.type!=='consumable'&&this.player.inventory.includes(id))return false;
+    if (this.player.gold < item.price) { this.addLog('Goldが足りない。'); return false; }
+    this.player.gold -= item.price;
+    if (item.type === 'consumable') this.player.consumables[id] = (this.player.consumables[id] || 0) + 1;
+    else { const owned=createOwnedItem(item,this.rng,{instanceId:id,source:'shop',rolled:false}); this.player.ownedItems.push(owned); this.player.inventory.push(id); }
+    const previous=this.player.shopProgress[item.seriesId]||0;
+    this.player.shopProgress[item.seriesId]=Math.max(previous,item.tier);
+    this.player.newShopItems=shopItems(this.floor,this.player.shopProgress).filter(x=>x.seriesId===item.seriesId&&x.tier===item.tier+1).map(x=>x.id);
+    this.addLog(`${item.name}を${item.price} Gで購入した。`);
+    return true;
+  }
+
+  equip(id) {
+    if (this.status !== 'shop' && this.status !== 'preparation') return false;
+    let owned=this.player.ownedItems.find(x=>x.instanceId===id)||this.player.ownedItems.find(x=>x.definitionId===id);
+    if(!owned&&this.player.inventory.includes(id)){const definition=itemById(id);owned=createOwnedItem(definition,this.rng,{instanceId:id,source:'shop',rolled:false});this.player.ownedItems.push(owned)}
+    const item = itemById(owned?.definitionId);
+    if (!item || !['weapon','armor'].includes(item.type)) return false;
+    this.player.equipment[item.type] = owned.instanceId;
+    this.recalculateEquipment();
+    this.addLog(`${item.name}を装備した。`);
+    return true;
+  }
+
+  recalculateEquipment() {
+    const previousMax = this.player.maxHp;
+    for (const stat of ['maxHp','atk','def','spd','obs']) this.player[stat] = this.player.baseStats[stat];
+    for (const id of Object.values(this.player.equipment)) {
+      const owned=this.player.ownedItems.find(x=>x.instanceId===id);
+      if (!owned) continue;
+      for (const [stat,value] of Object.entries(owned.rolledStats)) if (stat in this.player) this.player[stat] += value;
+    }
+    this.player.hp = Math.min(this.player.maxHp, Math.max(0, this.player.hp + Math.max(0, this.player.maxHp - previousMax)));
+  }
+
+  useConsumable(requestedId) {
+    const id = requestedId && (this.player.consumables[requestedId] || 0) > 0 ? requestedId : ['elixir','deep-potion','high-potion','mid-potion','herb'].find(key => (this.player.consumables[key] || 0) > 0);
+    const item = itemById(id);
+    if (!item) { this.addLog('使える回復アイテムがない。'); return false; }
+    this.player.consumables[id] -= 1;
+    this.battleMetrics && (this.battleMetrics.itemsUsed += 1);
+    const before = this.player.hp;
+    this.player.hp = Math.min(this.player.maxHp, this.player.hp + item.bonuses.heal);
+    this.addLog(`${item.name}を使った。HP ${before} → ${this.player.hp}`);
+    return true;
+  }
+
+  serialize() {
+    return JSON.parse(JSON.stringify({ version:3, floor:this.floor, player:this.player, enemy:this.enemy, status:this.status,
+      turn:this.turn, observation:this.observation, runExp:this.runExp, totalTurns:this.totalTurns, totalHpLost:this.totalHpLost,
+      sameFloorBattles:this.sameFloorBattles, lastReward:this.lastReward, logs:this.logs, meta:this.meta, rngState:this.rng.state, threat:this.threat, itemCounter:this.itemCounter }));
+  }
+
+  restore(state) {
+    if (![2,3].includes(state?.version) || !state.player || state.status !== 'preparation') throw new Error('Invalid save data');
+    Object.assign(this, state);
+    this.rng = new Rng(1); this.rng.state = Number(state.rngState);
+    this.feedback = null; this.feedbackId = 0;
+    this.player.baseStats ||= { maxHp:this.player.maxHp, atk:this.player.atk, def:this.player.def, spd:this.player.spd, obs:this.player.obs };
+    this.player.ownedItems ||= (this.player.inventory||[]).map((id,index)=>createOwnedItem(itemById(id),this.rng,{instanceId:`legacy-${index+1}`,source:'shop',rolled:false}));
+    this.player.shopProgress ||= initialShopProgress(); this.player.newShopItems ||= []; this.threat ||= 0; this.itemCounter ||= this.player.ownedItems.length;
+    for(const slot of ['weapon','armor']){const old=this.player.equipment[slot];if(old&&!this.player.ownedItems.some(x=>x.instanceId===old)){this.player.equipment[slot]=this.player.ownedItems.find(x=>x.definitionId===old)?.instanceId||null}}
+    this.recalculateEquipment();
+  }
+
+  updateThreat() {
+    const before=this.threat;
+    let change=0, hpRate=this.player.hp/this.player.maxHp;
+    if(hpRate<=.2)change+=8;
+    if(this.battleMetrics.turns>=Math.max(8,this.enemy.maxHp/Math.max(1,this.player.atk)*4))change+=7;
+    change+=this.battleMetrics.unguardedUltimateHits*10+this.battleMetrics.failedEscapes*4+Math.max(0,this.battleMetrics.itemsUsed-1)*3;
+    if(change===0&&hpRate>.55&&this.battleMetrics.turns<=12)change=-5;
+    this.threat=Math.max(0,Math.min(100,Math.round(this.threat*.8+change)));
+    if(this.threat>before)this.addLog('戦闘の乱れに呼応し、ダンジョンの気配が不穏になった。');
+    else if(this.threat<before)this.addLog('戦いを終えると、ダンジョンの気配が少し静まった。');
   }
 
   addLog(message) {

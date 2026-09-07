@@ -1,7 +1,7 @@
 import { floorLevelRange, rollStat } from './formulas.js';
 import { CONFIG } from './config.js';
 
-const A = (id, name, hp, atk, def, spd, obs, danger, trait, weakness, pattern) => ({ id, name, hp, atk, def, spd, obs, danger, trait, weakness, pattern });
+const A = (id, name, hp, atk, def, spd, obs, danger, trait, weakness, pattern) => ({ id, name, hp, atk, def, spd, obs, danger, baseGold: Math.round(12 + danger * 10), trait, weakness, pattern });
 
 const STRIKE = { id: 'strike', name: '攻撃', telegraph: 'こちらとの間合いを測っている。', text: '素早く踏み込み、攻撃した。', multiplier: 1 };
 const HEAVY = { id: 'heavy', name: '強打', telegraph: '大きく武器を振りかぶった。次は危険だ。', text: '予告どおり渾身の一撃を振り下ろした！', multiplier: 1.75 };
@@ -9,6 +9,8 @@ const GUARD = { id: 'guard', name: '防御', telegraph: '身体を丸め、守�
 const LUNGE = { id: 'lunge', name: '突進', telegraph: '後ろへ大きく下がり、一直線に狙いを定めた。', text: '溜めた距離を使って突進した！', multiplier: 1.5 };
 const FEINT = { id: 'feint', name: 'フェイント', telegraph: '視線を逸らし、足先だけがこちらを向いている。', text: '視線は囮だった。鋭い一撃が飛んできた！', multiplier: 1.25 };
 const REST = { id: 'rest', name: '休息', telegraph: '荒い息を整えようとしている。攻撃は来なさそうだ。', text: '息を整え、隙を見せた。', multiplier: 0 };
+const CHARGE = { id: 'charge', name: '破砕撃準備', telegraph: '空気が震えている。次の攻撃は極めて危険だ。', text: '大槌に集めた力を限界まで高めている。', multiplier: 0 };
+const CRUSH = { id: 'ultimate', name: '破砕撃', telegraph: '大槌が赤く輝く。今すぐ防御しなければ致命傷になる！', text: '予告どおり「破砕撃」を放った！', multiplier: 0, ultimate: true };
 
 export const ENEMIES = [
   A('slime','蒼雫スライム',1.05,.82,1.12,.72,.65,.8,'打撃を柔らかく受ける','演算強打',[STRIKE,GUARD]),
@@ -36,25 +38,70 @@ export const ENEMIES = [
 export function createEnemy(floor, rng, options = {}) {
   const [min, max] = floorLevelRange(floor);
   const archetype = options.archetype ?? rng.pick(ENEMIES);
-  const elite = options.elite ?? rng.next() < (options.eliteChance ?? CONFIG.eliteChance);
-  const level = elite ? Math.max(min + 1, Math.round(rng.int(min, max) * 1.75)) : rng.int(min, max);
+  let rank=options.rank;
+  if(!rank){
+    const strong=rng.next()<(options.strongChance??options.eliteChance??CONFIG.eliteChance);
+    rank=strong?(options.eliteChance!==undefined?'elite':rng.next()<CONFIG.aberrantShare?'aberrant':'elite'):'normal';
+  }
+  const elite=rank!=='normal', rankScale=rank==='aberrant'?1.9:rank==='elite'?1.38:1;
+  const level = elite ? Math.max(min + 1, Math.round(rng.int(min, max) * rankScale)) : rng.int(min, max);
   const scale = 1 + (level - 1) * 0.115;
   const stat = (base, factor) => rollStat(base * scale * factor, rng);
-  const maxHp = stat(82, archetype.hp) * (elite ? 1.35 : 1);
-  return {
-    id: archetype.id, name: `${elite ? '異相の' : ''}${archetype.name}`, archetype,
+  const maxHp = stat(82, archetype.hp) * (rank==='aberrant'?1.85:rank==='elite'?1.32:1);
+  const enemy = {
+    id: archetype.id, name: `${rank==='aberrant'?'深淵の':rank==='elite'?'異相の':''}${archetype.name}`, archetype, rank,
     level, maxHp: Math.round(maxHp), hp: Math.round(maxHp),
-    atk: stat(12, archetype.atk) * (elite ? 1.22 : 1), def: stat(10, archetype.def) * (elite ? 1.2 : 1),
-    spd: stat(10, archetype.spd), obs: stat(10, archetype.obs), danger: archetype.danger * (elite ? 2 : 1),
-    elite, guarded: false, patternIndex: rng.int(0, archetype.pattern.length - 1),
+    atk: stat(12, archetype.atk) * (rank==='aberrant'?1.8:rank==='elite'?1.28:1), def: stat(10, archetype.def) * (rank==='aberrant'?1.65:rank==='elite'?1.25:1),
+    spd: stat(10, archetype.spd)*(rank==='aberrant'?1.3:rank==='elite'?1.12:1), obs: stat(10, archetype.obs)*(rank==='aberrant'?1.55:rank==='elite'?1.18:1), danger: archetype.danger*(rank==='aberrant'?2.4:rank==='elite'?1.7:1),
+    elite, guarded: false, patternIndex: 0, combatTurn: 1,
+    ultimateTurn: ['ogre', 'drake'].includes(archetype.id) ? rng.int(5, 7) : null,
   };
+  enemy.intent = chooseIntent(enemy, rng);
+  return enemy;
 }
 
 export function currentIntent(enemy) {
-  return enemy.archetype.pattern[enemy.patternIndex % enemy.archetype.pattern.length];
+  return enemy.intent || enemy.archetype.pattern[enemy.patternIndex % enemy.archetype.pattern.length];
 }
 
-export function advanceIntent(enemy) {
-  enemy.patternIndex = (enemy.patternIndex + 1) % enemy.archetype.pattern.length;
+function weightedPick(entries, rng) {
+  const total = entries.reduce((sum, entry) => sum + entry.weight, 0);
+  let roll = rng.next() * total;
+  for (const entry of entries) {
+    roll -= entry.weight;
+    if (roll < 0) return entry.intent;
+  }
+  return entries.at(-1).intent;
 }
 
+export function chooseIntent(enemy, rng) {
+  if (enemy.ultimateTurn && enemy.combatTurn === enemy.ultimateTurn - 1) return CHARGE;
+  if (enemy.ultimateTurn && enemy.combatTurn === enemy.ultimateTurn) return CRUSH;
+
+  const lowHp = enemy.hp / enemy.maxHp <= 0.3;
+  const counts = new Map();
+  for (const intent of enemy.archetype.pattern) counts.set(intent, (counts.get(intent) || 0) + 1);
+  const entries = [...counts].map(([intent, count]) => ({ intent, weight: count }));
+
+  // Conditional personality: wounded predators press harder; defensive enemies turtle.
+  for (const entry of entries) {
+    if (lowHp && ['wolf', 'orc', 'ogre'].includes(enemy.id) && ['heavy', 'lunge', 'strike'].includes(entry.intent.id)) entry.weight *= 1.7;
+    if (lowHp && ['knight', 'beetle', 'lizard'].includes(enemy.id) && entry.intent.id === 'guard') entry.weight *= 2;
+    if (enemy.id === 'goblin' && entry.intent.id === 'strike') entry.weight *= 1.4;
+  }
+  return weightedPick(entries, rng);
+}
+
+export function advanceIntent(enemy, rng) {
+  enemy.combatTurn += 1;
+  enemy.patternIndex += 1;
+  enemy.intent = chooseIntent(enemy, rng);
+}
+
+export function telegraphText(enemy) {
+  const intent = currentIntent(enemy);
+  if (enemy.ultimateTurn && enemy.combatTurn === enemy.ultimateTurn - 2) {
+    return `${intent.telegraph} 敵の周囲に力が集まり始めている。`;
+  }
+  return intent.telegraph;
+}
