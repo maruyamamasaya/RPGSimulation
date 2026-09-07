@@ -1,27 +1,25 @@
 # Current
 
-この文書は現在地だけを示します。経緯はGit history、重要判断はADRへ残し、完了履歴を蓄積しません。
-
 ## Current Phase
 
-Starter / Project not initialized
+MVP playable / local browser release
 
 ## Current State
 
-プロジェクト固有情報は未初期化で、アプリケーションコードは未実装です。
+1人用の無限階層、ターン制戦闘、成長、20種の敵、強敵、段階的な情報開示、予兆、最高到達階層の保存が動作します。ゲームロジックはUIから分離され、seed指定可能な乱数でテストできます。
 
 ## Working
 
-- Documentation starter is available.
-
-## In Progress
-
-- None.
+- 静的ファイルのみでPC・スマートフォンからプレイ可能
+- ダメージ、EXP、成長、生成、開示、戦闘遷移の自動テスト
+- `localStorage`による最高到達階層と討伐知識の保存
 
 ## Known Issues
 
-- Project purpose, scope, and technology stack are undecided.
+- MVPは単独キャラクターのみで、装備・報酬・パーティー・ランキングは未実装です。
+- ゲームバランスは初期値であり、継続したプレイテストが必要です。
 
 ## Immediate Next
 
-- コピー後、READMEの初期化手順に従い、人間のレビューを受ける。
+- プレイテスト結果から敵・式・強敵率を調整する。
+- 図鑑を追加し、蓄積した討伐知識を戦闘外でも閲覧可能にする。

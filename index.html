@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="敵の予兆を読み、数式で深層へ挑む無限ダンジョンRPG">
+  <title>深層演算域 | Infinite Formula Dungeon</title>
+  <link rel="stylesheet" href="src/style.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div><p class="eyebrow">INFINITE FORMULA DUNGEON</p><h1>深層演算域</h1></div>
+      <div class="depth"><span>現在深度</span><strong id="floor">地下 1階</strong><small id="best">最高 1階</small></div>
+    </header>
+    <section class="battle-grid" aria-live="polite">
+      <article class="card player-card"><div class="card-title"><span>探索者</span><strong id="player-level">LV.1</strong></div><div id="player-stats"></div></article>
+      <section class="encounter">
+        <div id="elite-alert" class="elite-alert" hidden>⚠ 異質な気配 ── 撤退も戦略だ</div>
+        <p class="eyebrow">ENCOUNTER</p><h2 id="enemy-name">敵</h2><p id="enemy-level" class="enemy-level"></p>
+        <div id="enemy-hp" class="enemy-hp"></div>
+        <dl id="enemy-stats" class="intel-grid"></dl>
+        <div class="readout"><span>行動予兆</span><p id="telegraph"></p></div>
+        <div class="readout subtle"><span>解析メモ</span><p id="trait"></p></div>
+      </section>
+      <article class="card run-card"><div class="card-title"><span>探索記録</span><strong>RUN</strong></div><div id="run-stats"></div><p class="hint">情報を読むほど、運に頼らず判断できます。</p></article>
+    </section>
+    <section id="actions" class="actions" aria-label="行動選択">
+      <button data-action="attack"><b>攻撃</b><small>SP +3</small></button>
+      <button data-action="guard"><b>防御</b><small>被害 -65% / SP +5</small></button>
+      <button data-action="observe"><b>観察</b><small>情報を一段階解析</small></button>
+      <button id="skill-toggle"><b>スキル</b><small>SPを消費</small></button>
+      <button data-action="escape" class="escape"><b>逃走</b><small id="escape-rate">成功率 --%</small></button>
+    </section>
+    <section id="skills" class="skills" hidden>
+      <button data-action="powerStrike">演算強打 <small>SP 8 / 1.65倍</small></button>
+      <button data-action="firstAid">応急手当 <small>SP 12 / HP回復</small></button>
+      <button data-action="focus">集中解析 <small>SP 7 / 解析+2</small></button>
+    </section>
+    <section class="log-panel"><div class="log-heading"><h2>戦闘ログ</h2><span>最新の出来事が上</span></div><ol id="log"></ol></section>
+    <section id="gameover" class="modal" hidden><div><p class="eyebrow">EXPEDITION FAILED</p><h2>探索終了</h2><p id="gameover-copy"></p><button data-action="restart">新しい探索を始める</button></div></section>
+  </main>
+  <script type="module" src="src/ui.js"></script>
+</body>
+</html>
