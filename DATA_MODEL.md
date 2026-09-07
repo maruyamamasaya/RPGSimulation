@@ -1,43 +1,23 @@
 # Data Model
 
-永続化方式と永続化モデルの正本です。業務上の意味は`DOMAIN.md`、システム全体の構造は`ARCHITECTURE.md`へ記録します。永続化が不要なプロジェクトでは、**Persistence Strategy: Not applicable**と理由を記録し、残りを無理に埋めません。
-
 ## Persistence Strategy
 
-未定。
+サーバー永続化は行わず、ブラウザの`localStorage`にメタ進行だけを保存します。進行中ランは更新で失われます。
 
-## Entities
+## Stored document
 
-未定。
+キー `formula-dungeon:meta:v1`:
 
-## Tables / Collections
+```text
+{ version: 1, bestFloor: number, knowledge: { [enemyId]: defeatedCount } }
+```
 
-未定。
+`bestFloor`は到達した最大階、`knowledge`は敵IDごとの勝利数です。不正・旧形式データは読み捨てて初期値へ戻します。
 
-## Primary Keys
+## Ownership / Lifecycle / Retention
 
-未定。
+データは利用者のブラウザだけが所有し、ゲーム終了後も明示的にブラウザデータを消すまで保持されます。外部送信、アカウント、バックアップはありません。
 
-## Foreign Keys
+## Future migration
 
-未定。
-
-## Relations
-
-未定。
-
-## Ownership
-
-未定。
-
-## Lifecycle
-
-未定。
-
-## Retention
-
-未定。
-
-## Migration Notes
-
-未定。確立した移行方針と互換性上の注意だけを記録します。
+形式変更時はキー末尾と`version`を更新し、必要なら起動時に旧版を一方向変換します。ランキング導入時はクライアント値を信頼せず、別のサーバーモデルを設計します。

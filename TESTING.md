@@ -1,53 +1,28 @@
 # Testing
 
-プロジェクトの検証方針と、確立済みコマンドの正本です。Starterでは技術スタックが未定のため、実在しないコマンドを記載しません。決定後、「変更タイプ → 必要な検証」の対応を整理してください。実行可能になったら短時間の**Fast Validation**と網羅的な**Full Validation**を分けます。
-
 ## Testing Strategy
 
-未定。
+seed固定可能な純粋ロジックをNode.js標準test runnerで検証します。UIはブラウザで主要ブレークポイントと操作を手動確認します。
 
 ## Validation Matrix
 
 | 変更タイプ | 必要な検証 |
 | --- | --- |
-| 未定 | 技術スタック決定後に定義 |
+| 式・敵・状態遷移 | `npm test`、`npm run check` |
+| UI/CSS | 上記に加えブラウザ操作とレスポンシブ表示 |
+| 文書のみ | 文書リンクと実装との整合 |
 
-## Fast Validation
+## Fast / Full Validation
 
-未定。
+- Fast: `npm run check`
+- Full: `npm test && npm run check`
+- Unit: `node --test`
+- Build: 不要（native ES Modules）
 
-## Full Validation
+## Covered rules
 
-未定。
-
-## Lint
-
-未定。
-
-## Format Check
-
-未定。
-
-## Typecheck
-
-未定。
-
-## Unit Test
-
-未定。
-
-## Integration Test
-
-未定。
-
-## E2E
-
-未定。
-
-## Build
-
-未定。
+seed再現性、深層スケール、格差/OBS/観察による開示、防御、EXP格差、異常個体率、死亡、予兆一致、レベルアップを自動検証します。
 
 ## Manual Verification
 
-文書間リンク、正本との整合、プロジェクト固有の受け入れ条件を確認する。具体的手順は初期化後に定義する。
+375pxとデスクトップ幅で、全行動、スキルメニュー、ログ、勝利後の階層遷移、ゲームオーバーと再挑戦を確認します。
