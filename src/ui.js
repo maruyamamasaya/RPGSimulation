@@ -8,6 +8,7 @@ import { displayItemName, traitDescription } from './equipment-traits.js';
 import { eventById } from './events.js';
 import { mutationById } from './mutations.js';
 import { buildSummary, specializationById } from './specializations.js';
+import { affinityKnowledge, damageTypeById, effectiveStat, statusById, statusList } from './combat-effects.js';
 
 const STORAGE_KEY = 'formula-dungeon:meta:v1';
 const SAVE_KEY = 'formula-dungeon:save:v3';
@@ -52,6 +53,8 @@ function bonus(stat) { return game.player[stat] - game.player.baseStats[stat]; }
 function statDetail(stat) { const value=bonus(stat); return value ? ` <small>（基礎${game.player.baseStats[stat]} ${value>0?'+':''}${value}）</small>` : ''; }
 function ownedByInstance(id) { return game.player.ownedItems.find(item=>item.instanceId===id); }
 function equippedName(slot) { const owned=ownedByInstance(game.player.equipment[slot]);const item=itemById(owned?.definitionId);return item?displayItemName(item,owned):'なし'; }
+const names=ids=>ids?.length?ids.map(id=>damageTypeById(id).name).join('・'):'なし';
+const statusText=target=>{const entries=statusList(target);return entries.length?entries.map(entry=>`${entry.name} ${entry.turns}T`).join(' / '):'なし'};
 
 function render() {
   const p = game.player;
@@ -75,6 +78,9 @@ function render() {
   $('#enemy-level').textContent = score >= .7 ? `LV.${e.level}` : score >= .35 ? `LV.${Math.max(1,e.level-2)}〜${e.level+2}` : 'LV.???';
   $('#enemy-hp').innerHTML = score >= .82 ? `<span>HP ${e.hp} / ${e.maxHp}</span>${meter(e.hp,e.maxHp,'enemy')}` : score >= .48 ? `<span>HP 推定 ${Math.round(e.hp*.9)}〜${Math.round(e.hp*1.1)}</span>${meter(e.hp,e.maxHp,'enemy')}` : '<span>HP ???</span>';
   $('#enemy-stats').innerHTML = estimate('ATK',e.atk,score) + estimate('DEF',e.def,score-.08) + estimate('SPD',e.spd,score+.05);
+  const known=affinityKnowledge(e.archetype,{observation:game.observation,knowledge:game.knowledge});
+  $('#affinity-readout').textContent=`弱点 ${known.weaknesses===null?'不明':names(known.weaknesses)} / 耐性 ${known.resistances===null?'不明':names(known.resistances)}`;
+  $('#combat-statuses').textContent=`敵：${statusText(e)}　探索者：${statusText(p)}`;
   $('#telegraph').textContent = telegraphText(e);
   const intent=currentIntent(e),dangerousIntent=intent.ultimate||intent.id==='charge';
   $('#telegraph-panel').classList.toggle('danger',dangerousIntent);
@@ -85,7 +91,7 @@ function render() {
   $('#elite-alert').textContent = e.rank === 'aberrant' ? '【危険】現在の戦力では勝率が低い可能性があります。逃走を推奨します。' : '【強敵】高リスク・高報酬。撤退も戦略です。';
   $('#enemy-name').className = e.rank || 'normal';
   document.querySelector('[data-action="escape"]').classList.toggle('primary-escape',game.recommendedAction==='escape');
-  $('#escape-rate').textContent = `成功率 ${Math.round(escapeChance(p,e,game.observation)*100)}%`;
+  $('#escape-rate').textContent = `成功率 ${Math.round(escapeChance({...p,spd:effectiveStat(p,'spd')},{...e,spd:effectiveStat(e,'spd')},game.observation)*100)}%`;
   const threatHint=p.obs>=18?` / 強敵率 約${Math.round(game.strongEnemyChance*100)}%`:'';
   const mutation=mutationById(game.floorMutation?.id);
   const build=buildSummary(game.specializations);
@@ -129,7 +135,7 @@ function itemCard(item, owned=null, shortcut=null, selectionIndex=null) {
   const action=owned?`${equipped?'unequip':'equip'}:${owned.instanceId}`:`buy:${item.id}`;
   const isNew=game.player.newShopItems.includes(item.id);
   const selector=!owned&&selectionIndex!==null?`data-select-index="${selectionIndex}"`:`data-action="${action}"`;
-  return `<article class="rarity-card rarity-${item.rarity}"><div><b>${shortcut?`<kbd>${shortcut.toUpperCase()}</kbd> `:''}${displayItemName(item,owned)}</b>${isNew?'<em>NEW</em>':''}<small>${item.type} / ${RARITY_LABEL[item.rarity]} / ${item.rarity.toUpperCase()} / Lv.${item.recommendedLevel}目安</small><p>${describeBonuses(owned?.rolledStats||item.baseStats)}${owned?.trait?` / <span class="trait-effect">${traitDescription(owned.trait)}</span>`:''}</p><small>所持 ${owned?1:game.player.inventory.filter(id=>id===item.id).length}</small></div><button ${selector}>${equipped?'外す':owned?'装備する':'選択'}</button></article>`;
+  return `<article class="rarity-card rarity-${item.rarity}"><div><b>${shortcut?`<kbd>${shortcut.toUpperCase()}</kbd> `:''}${displayItemName(item,owned)}</b>${isNew?'<em>NEW</em>':''}<small>${item.type}${item.damageType?`・${damageTypeById(item.damageType).name}`:''} / ${RARITY_LABEL[item.rarity]} / ${item.rarity.toUpperCase()} / Lv.${item.recommendedLevel}目安</small><p>${describeBonuses(owned?.rolledStats||item.baseStats)}${owned?.trait?` / <span class="trait-effect">${traitDescription(owned.trait)}</span>`:''}</p><small>所持 ${owned?1:game.player.inventory.filter(id=>id===item.id).length}</small></div><button ${selector}>${equipped?'外す':owned?'装備する':'選択'}</button></article>`;
 }
 
 function renderShop() {
@@ -191,7 +197,7 @@ function renderBestiary() {
   const encountered = entries.filter(entry => entry.encountered).length;
   $('#bestiary-progress').textContent = `発見 ${encountered} / ${entries.length}`;
   $('#bestiary-list').innerHTML = entries.map(entry => entry.encountered ? `
-    <article class="bestiary-card"><h3>${entry.name}</h3><p>遭遇済み</p><dl><div><dt>遭遇</dt><dd>${entry.encounters}回</dd></div><div><dt>撃破</dt><dd>${entry.defeats}回</dd></div><div><dt>初回</dt><dd>${entry.firstFloor ? `地下${entry.firstFloor}階` : '記録なし'}</dd></div><div><dt>最深</dt><dd>${entry.deepestFloor ? `地下${entry.deepestFloor}階` : '記録なし'}</dd></div></dl></article>` : `
+    <article class="bestiary-card"><h3>${entry.name}</h3><p>遭遇済み</p><dl><div><dt>遭遇</dt><dd>${entry.encounters}回</dd></div><div><dt>撃破</dt><dd>${entry.defeats}回</dd></div><div><dt>初回</dt><dd>${entry.firstFloor ? `地下${entry.firstFloor}階` : '記録なし'}</dd></div><div><dt>最深</dt><dd>${entry.deepestFloor ? `地下${entry.deepestFloor}階` : '記録なし'}</dd></div></dl><p class="bestiary-intel">弱点：${entry.weaknesses===null?'未解析':names(entry.weaknesses)} / 耐性：${entry.resistances===null?'未解析':names(entry.resistances)}<br>状態異常：${entry.statuses===null?'未解析':entry.statuses.length?entry.statuses.map(id=>statusById(id).name).join('・'):'なし'}</p></article>` : `
     <article class="bestiary-card unknown"><h3>？？？</h3><p>未遭遇</p></article>`).join('');
   $('#bestiary-modal').hidden = false;
   renderKeyboardHelp();

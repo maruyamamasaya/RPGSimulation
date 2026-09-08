@@ -1,5 +1,6 @@
 import { ENEMIES } from './enemies.js';
 import { mergeRecords, mergeRunHistory, normalizeRecords, normalizeRunHistory } from './run-records.js';
+import { affinityKnowledge } from './combat-effects.js';
 
 const enemyIds = new Set(ENEMIES.map(enemy => enemy.id));
 const count = value => Math.max(0, Math.floor(Number(value) || 0));
@@ -80,8 +81,8 @@ export function bestiaryEntries(meta) {
   const normalized = normalizeMeta(meta);
   return ENEMIES.map(enemy => {
     const record = normalized.bestiary[enemy.id];
-    return record ? { id:enemy.id, name:enemy.name, encountered:true, ...record } : {
-      id:enemy.id, name:'？？？', encountered:false, encounters:0, defeats:0, firstFloor:null, deepestFloor:null,
-    };
+    if(!record)return {id:enemy.id,name:'？？？',encountered:false,encounters:0,defeats:0,firstFloor:null,deepestFloor:null,weaknesses:null,resistances:null,statuses:null};
+    const known=affinityKnowledge(enemy,{knowledge:record.defeats});
+    return {id:enemy.id,name:enemy.name,encountered:true,...record,weaknesses:known.weaknesses,resistances:known.resistances,statuses:record.defeats>=3?[...new Set(enemy.pattern.map(intent=>intent.status?.id).filter(Boolean))]:null};
   });
 }

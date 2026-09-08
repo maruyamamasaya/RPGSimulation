@@ -25,7 +25,7 @@ export function outgoingDamageMultiplier(player, enemy) {
   const traits=equippedTraits(player);
   let multiplier=1;
   if(traits.has('HUNTER') && enemy?.elite)multiplier*=1.15;
-  if(traits.has('LAST_STAND') && player.hp/player.maxHp<=.3)multiplier*=1.15;
+  if(traits.has('LAST_STAND') && player.hp<=player.maxHp*.3+Number.EPSILON*player.maxHp)multiplier*=1.15;
   return multiplier;
 }
 

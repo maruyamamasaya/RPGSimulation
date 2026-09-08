@@ -13,6 +13,7 @@ import { displayItemName, EQUIPMENT_TRAITS, traitDescription } from '../src/equi
 import { EVENT_CHANCE, FLOOR_EVENTS, eventEquipment, rollFloorEvent } from '../src/events.js';
 import { FLOOR_MUTATIONS, rollFloorMutation } from '../src/mutations.js';
 import { buildDropBonus, buildSummary, createSpecializations, MAX_SPECIALIZATIONS, rollSpecializationCandidates, SPECIALIZATION_MILESTONES, specializationCount } from '../src/specializations.js';
+import { AFFINITY_MULTIPLIERS, affinityKnowledge, affinityMultiplier, applyStatus, beginStatusTurn, createStatuses, effectiveStat, endStatusTurn, hasStatus, normalizeStatuses, outgoingStatusMultiplier, weaponDamageType } from '../src/combat-effects.js';
 
 function equipTrait(game,definitionId,trait,instanceId=`test-${trait}`) {
   const definition=itemById(definitionId);
@@ -558,4 +559,38 @@ test('explorer and merchant combine once with mutation and equipment bonuses', (
 test('build state survives v3 restore, defaults for old saves, and resets on a new run', () => {
   const game=new Game({seed:209});game.specializations.OFFENSE=2;game.specializations.EXPLORER=1;game.specializationMilestones=[5,10];game.pendingSpecialization={level:15,candidates:['OFFENSE','DEFENSE','MERCHANT']};game.status='preparation';const saved=game.serialize();const restored=new Game({savedState:JSON.parse(JSON.stringify(saved))});assert.deepEqual(restored.specializations,game.specializations);assert.deepEqual(restored.specializationMilestones,[5,10]);assert.deepEqual(restored.specializationQueue,[]);assert.deepEqual(restored.pendingSpecialization,game.pendingSpecialization);
   const legacy=JSON.parse(JSON.stringify(saved));delete legacy.specializations;delete legacy.specializationMilestones;delete legacy.specializationQueue;delete legacy.pendingSpecialization;const old=new Game({savedState:legacy});assert.deepEqual(old.specializations,createSpecializations());assert.deepEqual(old.specializationMilestones,[]);assert.equal(old.pendingSpecialization,null);restored.startRun();assert.deepEqual(restored.specializations,createSpecializations());
+});
+
+test('weakness, resistance, and neutral affinities use restrained multipliers', () => {
+  const enemy={archetype:{weaknesses:['SLASH'],resistances:['ARCANE']}};
+  assert.equal(affinityMultiplier(enemy,'SLASH'),1.15);assert.equal(affinityMultiplier(enemy,'ARCANE'),.85);assert.equal(affinityMultiplier(enemy,'PIERCE'),1);assert.deepEqual(AFFINITY_MULTIPLIERS,{weakness:1.15,resistance:.85,neutral:1});
+});
+
+test('observation and accumulated knowledge progressively disclose affinities', () => {
+  const archetype={weaknesses:['SLASH'],resistances:['ARCANE']};
+  assert.deepEqual(affinityKnowledge(archetype),{level:0,weaknesses:null,resistances:null});assert.deepEqual(affinityKnowledge(archetype,{observation:1}),{level:1,weaknesses:['SLASH'],resistances:null});assert.deepEqual(affinityKnowledge(archetype,{observation:2}),{level:2,weaknesses:['SLASH'],resistances:['ARCANE']});assert.equal(affinityKnowledge(archetype,{knowledge:3}).level,2);
+});
+
+test('statuses apply, refresh without stacking, count down, and expire', () => {
+  const target={maxHp:100,hp:100,atk:20,def:20,spd:20,statuses:createStatuses()};applyStatus(target,'WEAKEN');assert.equal(outgoingStatusMultiplier(target),.85);assert.equal(target.statuses.WEAKEN.turns,2);endStatusTurn(target);assert.equal(target.statuses.WEAKEN.turns,2);endStatusTurn(target);assert.equal(target.statuses.WEAKEN.turns,1);applyStatus(target,'WEAKEN');assert.equal(Object.keys(target.statuses).length,1);assert.equal(target.statuses.WEAKEN.turns,2);endStatusTurn(target);endStatusTurn(target);endStatusTurn(target);assert.equal(hasStatus(target,'WEAKEN'),false);
+});
+
+test('bleed damage and armor break and slow ability modifiers end safely', () => {
+  const target={maxHp:100,hp:100,def:20,spd:20,statuses:{}};applyStatus(target,'BLEED');applyStatus(target,'ARMOR_BREAK');applyStatus(target,'SLOW');assert.equal(beginStatusTurn(target)[0].amount,3);assert.equal(target.hp,97);assert.equal(effectiveStat(target,'def'),17);assert.equal(effectiveStat(target,'spd'),17);for(let turn=0;turn<3;turn++){endStatusTurn(target);beginStatusTurn(target)}endStatusTurn(target);assert.equal(hasStatus(target,'BLEED'),false);assert.equal(effectiveStat(target,'def'),20);
+});
+
+test('weapons determine attack type and power strike inflicts non-stacking armor break', () => {
+  const game=new Game({seed:901,eliteChance:0});assert.equal(weaponDamageType(game.player,itemById),'BLUNT');equipTrait(game,'rusty-sword',null,'typed-weapon');game.status='combat';assert.equal(weaponDamageType(game.player,itemById),'SLASH');game.enemy.hp=99999;game.player.sp=99;game.dispatch('powerStrike');assert.equal(hasStatus(game.enemy,'ARMOR_BREAK'),true);assert.equal(Object.keys(game.enemy.statuses).filter(id=>id==='ARMOR_BREAK').length,1);
+});
+
+test('status combat is seeded and composes with equipment, specialization, and mutation paths', () => {
+  const run=seed=>{const game=new Game({seed,eliteChance:0});game.enemy=createEnemy(10,game.rng,{archetype:ENEMIES.find(enemy=>enemy.id==='slime'),rank:'normal'});equipTrait(game,'old-staff','HUNTER');game.status='combat';game.specializations.OFFENSE=1;game.floorMutation={id:'BERSERK'};game.enemy.hp=99999;game.hitEnemy(1,'試験','ARCANE');applyStatus(game.enemy,'WEAKEN');game.enemy.intent={id:'strike',name:'攻撃',text:'攻撃した。',telegraph:'攻撃。',multiplier:1};game.enemyTurn(false);return {damage:game.runStats.maxDamage,hp:game.player.hp,statuses:game.enemy.statuses}};assert.deepEqual(run(902),run(902));
+});
+
+test('bestiary hides unanalysed combat data and reveals it through defeats', () => {
+  const enemy=ENEMIES.find(entry=>entry.id==='wolf');const once=bestiaryEntries({bestFloor:1,knowledge:{[enemy.id]:1},bestiary:{}}).find(entry=>entry.id===enemy.id);assert.ok(once.weaknesses);assert.equal(once.resistances,null);assert.equal(once.statuses,null);const known=bestiaryEntries({bestFloor:1,knowledge:{[enemy.id]:3},bestiary:{}}).find(entry=>entry.id===enemy.id);assert.ok(known.resistances);assert.deepEqual(known.statuses,['BLEED']);
+});
+
+test('legacy v3 saves without status fields restore with safe empty defaults', () => {
+  const game=new Game({seed:903});game.enemy.hp=1;game.player.atk=99999;game.dispatch('attack');const saved=game.serialize();delete saved.player.statuses;delete saved.enemy.statuses;const restored=new Game({savedState:saved});assert.deepEqual(restored.player.statuses,{});assert.deepEqual(normalizeStatuses(restored.enemy?.statuses),{});
 });

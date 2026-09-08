@@ -57,7 +57,8 @@ h1 { margin:0; font-size:clamp(25px,3.5vw,40px); letter-spacing:.08em; }
 .equipment-line { margin-top:12px; padding:9px; background:var(--panel-deep); color:var(--muted); font-size:11px; line-height:1.65; overflow-wrap:anywhere; }
 .encounter { position:relative; padding:20px clamp(20px,3vw,40px); text-align:center; border-color:#365f55; }
 .encounter::before { content:""; position:absolute; inset:7px; border:1px solid rgba(121,242,192,.08); border-radius:calc(var(--radius) - 3px); pointer-events:none; }
-.battle-center { display:none; }
+.battle-center { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:9px; color:var(--muted); font-size:10px; }
+.battle-center>div { min-width:0; padding:6px 8px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; background:var(--panel-deep); border:1px solid var(--line); border-radius:4px; }
 .encounter h2 { margin:6px 0 0; font-size:clamp(26px,3.5vw,38px); overflow-wrap:anywhere; }
 .enemy-level { margin:4px 0 14px; color:var(--gold); font:700 17px ui-monospace,'SFMono-Regular',monospace; }
 .enemy-hp { text-align:left; font:700 13px ui-monospace,'SFMono-Regular',monospace; }
@@ -161,6 +162,7 @@ h1 { margin:0; font-size:clamp(25px,3.5vw,40px); letter-spacing:.08em; }
 .bestiary-card { min-width:0; padding:13px; background:var(--panel-deep); border:1px solid var(--line); border-radius:5px; }
 .bestiary-card h3 { margin:0; color:var(--text); overflow-wrap:anywhere; }
 .bestiary-card>p { margin:4px 0 9px!important; font-size:10px; }
+.bestiary-card .bestiary-intel { margin-top:9px!important; padding:7px; color:var(--muted); background:var(--panel); line-height:1.5; }
 .bestiary-card dl { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:5px; margin:0; }
 .bestiary-card dl div { min-width:0; padding:6px; text-align:center; background:var(--panel); }
 .bestiary-card dt { color:var(--muted); font-size:8px; }
@@ -284,7 +286,8 @@ h1 { margin:0; font-size:clamp(25px,3.5vw,40px); letter-spacing:.08em; }
   body.mobile-combat .encounter h2 { grid-row:2; }
   body.mobile-combat .enemy-hp { grid-row:3; height:27px; margin-top:2px; font-size:11px; overflow:hidden; }
   body.mobile-combat .meter.enemy { height:8px; margin-top:2px; }
-  body.mobile-combat .battle-center { display:block; grid-row:4; min-height:0; }
+  body.mobile-combat .battle-center { display:grid; grid-row:4; grid-template-columns:1fr; align-content:center; min-height:0; margin:0; gap:3px; overflow:hidden; }
+  body.mobile-combat .battle-center>div { padding:3px 6px; font-size:8px; line-height:1.15; }
   body.mobile-combat .telegraph-panel { grid-row:5; height:45px; min-height:45px; margin:0; padding:4px 7px; overflow:hidden; border-left-width:4px; }
   body.mobile-combat .telegraph-panel span { font-size:8px; }
   body.mobile-combat .telegraph-panel p { margin-top:1px; font-size:10px; line-height:1.2; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }

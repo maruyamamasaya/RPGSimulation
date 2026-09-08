@@ -9,10 +9,11 @@ import { equippedTraits, goldRewardMultiplier, normalizeTrait, outgoingDamageMul
 import { createFloorEvent, eventById, eventEquipment, normalizeRunModifiers, rollFloorEvent } from './events.js';
 import { mutationBonus, mutationById, mutationMultiplier, normalizeFloorMutation, rollFloorMutation } from './mutations.js';
 import { buildDamageMultiplier, buildDropBonus, buildGoldMultiplier, buildIncomingMultiplier, createSpecializations, MAX_SPECIALIZATIONS, normalizeSpecializations, rollSpecializationCandidates, SPECIALIZATION_MILESTONES, specializationById, specializationCount } from './specializations.js';
+import { affinity, affinityMultiplier, applyStatus, beginStatusTurn, createStatuses, damageTypeById, effectiveStat, endStatusTurn, normalizeStatuses, outgoingStatusMultiplier, statusById, weaponDamageType } from './combat-effects.js';
 
 export function createPlayer() {
   return { level: 1, maxHp: 100, hp: 100, atk: 12, def: 10, spd: 10, obs: 10, maxSp: 30, sp: 30, exp: 0,
-    baseStats: { maxHp:100, atk:12, def:10, spd:10, obs:10 }, gold:0, inventory:[], ownedItems:[], consumables:{}, equipment:{weapon:null,armor:null}, shopProgress:initialShopProgress(), newShopItems:[] };
+    baseStats: { maxHp:100, atk:12, def:10, spd:10, obs:10 }, statuses:createStatuses(), gold:0, inventory:[], ownedItems:[], consumables:{}, equipment:{weapon:null,armor:null}, shopProgress:initialShopProgress(), newShopItems:[] };
 }
 
 export class Game {
@@ -58,6 +59,7 @@ export class Game {
   spawnEnemy(record = true) {
     const strongChance=this.eliteChance!==undefined?this.eliteChance:Math.min(CONFIG.strongEnemyChanceCap,CONFIG.strongEnemyChance+this.threat*.000625+mutationBonus(this.floorMutation,'ELITE_ZONE',.03));
     this.enemy = createEnemy(this.floor, this.rng, this.eliteChance!==undefined?{eliteChance:this.eliteChance}:{strongChance});
+    this.player.statuses=createStatuses();
     this.observation = 0;
     this.turn = 1;
     this.battleMetrics={turns:0,unguardedUltimateHits:0,failedEscapes:0,itemsUsed:0};
@@ -81,13 +83,20 @@ export class Game {
     if (this.status === 'shop') return this.shopAction(action);
     if (this.status === 'event') return action==='eventContinue'?this.finishEvent():undefined;
     if (this.status !== 'combat') return;
+    if(!['attack','guard','observe','powerStrike','firstAid','focus','escape'].includes(action))return;
+    const skillCost={powerStrike:CONFIG.skills.powerStrike.cost,firstAid:CONFIG.skills.firstAid.cost,focus:CONFIG.skills.focus.cost}[action];
+    if(skillCost!==undefined&&this.player.sp<skillCost){this.spendSp(skillCost);return;}
+    for(const event of beginStatusTurn(this.player))if(event.id==='BLEED')this.addLog(`出血により${event.amount}ダメージ。`);
+    for(const event of beginStatusTurn(this.enemy))if(event.id==='BLEED')this.addLog(`${this.enemy.name}は出血により${event.amount}ダメージ。`);
+    if(this.player.hp<=0){this.finishDefeat('出血');return;}
+    if(this.enemy.hp<=0){this.win();return;}
     const beforeHp = this.player.hp;
     this.feedback = null;
     let guard = false;
     let enemyActs = true;
 
     if (action === 'attack') {
-      this.hitEnemy(1, '攻撃');
+      this.hitEnemy(1, '攻撃',weaponDamageType(this.player,itemById));
       this.player.sp = Math.min(this.player.maxSp, this.player.sp + 3);
     } else if (action === 'guard') {
       guard = true;
@@ -99,7 +108,7 @@ export class Game {
       this.addLog(`敵の動きを観察した。情報精度が上がった（解析 ${this.observation}/3）。`);
     } else if (action === 'powerStrike') {
       if (!this.spendSp(CONFIG.skills.powerStrike.cost)) return;
-      this.hitEnemy(CONFIG.skills.powerStrike.multiplier, CONFIG.skills.powerStrike.name);
+      this.hitEnemy(CONFIG.skills.powerStrike.multiplier, CONFIG.skills.powerStrike.name,'BLUNT',{id:'ARMOR_BREAK',chance:1});
     } else if (action === 'firstAid') {
       if (!this.spendSp(CONFIG.skills.firstAid.cost)) return;
       const healed = this.healPlayer(Math.round(this.player.maxHp * 0.24 + this.player.obs * 0.4));
@@ -109,7 +118,7 @@ export class Game {
       this.observation = Math.min(CONFIG.maxObservation, this.observation + 2);
       this.addLog('集中解析により、二段階深く見抜いた。');
     } else if (action === 'escape') {
-      const chance = escapeChance(this.player, this.enemy, this.observation);
+      const chance = escapeChance({...this.player,spd:effectiveStat(this.player,'spd')}, {...this.enemy,spd:effectiveStat(this.enemy,'spd')}, this.observation);
       if (this.rng.next() < chance) {
         this.addLog(`退路を見切り、逃走に成功した（成功率 ${Math.round(chance * 100)}%）。`);
         enemyActs = false;
@@ -125,14 +134,12 @@ export class Game {
       return;
     }
     if (enemyActs) this.enemyTurn(guard);
+    endStatusTurn(this.player);endStatusTurn(this.enemy);
     this.totalTurns += 1;
     this.battleMetrics.turns += 1;
     this.totalHpLost += Math.max(0, beforeHp - this.player.hp);
     if (this.player.hp <= 0) {
-      this.player.hp = 0;
-      this.status = 'gameover';
-      this.addLog(`HPが尽きた。地下${this.floor}階で探索を終えた。敗因は直前の「${this.lastEnemyAction}」。`);
-      this.lastRunResult = finishRun(this.meta,this.runStats,{floor:this.floor,totalTurns:this.totalTurns,finalLevel:this.player.level,finalGold:this.player.gold,endedAt:this.now()});
+      this.finishDefeat(this.lastEnemyAction);
       return;
     }
     this.turn += 1;
@@ -145,12 +152,14 @@ export class Game {
     return true;
   }
 
-  hitEnemy(multiplier, label) {
+  hitEnemy(multiplier, label, type='BLUNT', inflictedStatus=null) {
     const reduction = this.enemy.guarded ? 0.48 : 1;
-    const dealt = damage(this.player.atk, this.enemy.def, multiplier, this.rng, reduction*outgoingDamageMultiplier(this.player,this.enemy)*buildDamageMultiplier(this.player,this.specializations));
+    const relation=affinity(this.enemy,type);
+    const dealt = damage(this.player.atk, effectiveStat(this.enemy,'def'), multiplier, this.rng, reduction*outgoingDamageMultiplier(this.player,this.enemy)*buildDamageMultiplier(this.player,this.specializations)*outgoingStatusMultiplier(this.player)*affinityMultiplier(this.enemy,type));
     this.enemy.hp = Math.max(0, this.enemy.hp - dealt);
     this.runStats.maxDamage = Math.max(this.runStats.maxDamage,dealt);
-    this.addLog(`${label}で${dealt}ダメージ。${this.enemy.guarded ? '敵の防御に阻まれた。' : ''}`);
+    this.addLog(`${label}（${damageTypeById(type).name}）で${dealt}ダメージ。${relation==='weakness'?'弱点を突いた！':relation==='resistance'?'耐性に阻まれた。':''}${this.enemy.guarded ? '敵の防御に阻まれた。' : ''}`);
+    if(inflictedStatus&&this.enemy.hp>0&&this.rng.next()<inflictedStatus.chance){applyStatus(this.enemy,inflictedStatus.id);this.addLog(`${this.enemy.name}へ${statusById(inflictedStatus.id).name}を付与した。`)}
     this.feedback = { target: 'enemy', type: this.enemy.guarded ? 'block' : 'damage', amount: dealt, nonce: ++this.feedbackId };
     this.enemy.guarded = false;
   }
@@ -168,8 +177,8 @@ export class Game {
     } else {
       const baseRaw = intent.ultimate
         ? Math.max(1, Math.round(this.player.maxHp * (0.76 + this.rng.next() * 0.08) + this.enemy.atk * 0.28))
-        : damage(this.enemy.atk, this.player.def, intent.multiplier, this.rng, 1);
-      const raw=Math.max(1,Math.round(baseRaw*mutationMultiplier(this.floorMutation,'BERSERK',1.15)));
+        : damage(this.enemy.atk, effectiveStat(this.player,'def'), intent.multiplier, this.rng, 1);
+      const raw=Math.max(1,Math.round(baseRaw*mutationMultiplier(this.floorMutation,'BERSERK',1.15)*outgoingStatusMultiplier(this.enemy)));
       const defendedRaw=Math.max(1,Math.round(raw*buildIncomingMultiplier(this.specializations)));
       const dealt = guard ? Math.max(1, Math.round(defendedRaw * (1 - CONFIG.guardReduction))) : defendedRaw;
       const hpBefore = this.player.hp;
@@ -179,9 +188,12 @@ export class Game {
       else this.addLog(defendedRaw!==raw?`堅守：本来ダメージ ${raw} → ${dealt}。HP ${hpBefore} → ${this.player.hp}${intent.ultimate ? '（予兆された危険攻撃）' : ''}`:`本来ダメージ：${raw}。HP ${hpBefore} → ${this.player.hp}${intent.ultimate ? '（予兆された危険攻撃）' : ''}`);
       if(intent.ultimate&&!guard)this.battleMetrics.unguardedUltimateHits += 1;
       this.feedback = { target: 'player', type: guard ? 'block' : 'damage', amount: dealt, raw, nonce: ++this.feedbackId };
+      if(intent.status&&this.player.hp>0&&this.rng.next()<intent.status.chance){applyStatus(this.player,intent.status.id);this.addLog(`${statusById(intent.status.id).name}を受けた（${statusById(intent.status.id).duration}ターン）。`)}
     }
     advanceIntent(this.enemy, this.rng);
   }
+
+  finishDefeat(cause){this.player.hp=0;this.status='gameover';this.addLog(`HPが尽きた。地下${this.floor}階で探索を終えた。敗因は直前の「${cause}」。`);this.lastRunResult=finishRun(this.meta,this.runStats,{floor:this.floor,totalTurns:this.totalTurns,finalLevel:this.player.level,finalGold:this.player.gold,endedAt:this.now()});}
 
   win() {
     const rankMultiplier=this.enemy.rank==='aberrant'?18:this.enemy.rank==='elite'?10:1;
@@ -200,6 +212,7 @@ export class Game {
     this.updateThreat();
     this.addLog(`${this.enemy.elite?'強敵撃破！ ':'勝利！'}EXP +${reward} / Gold +${gold}（報酬率 ${Math.round(this.rewardRate*100)}%）`);
     this.lastReward = { exp:reward, gold, rate:this.rewardRate, drop, rank:this.enemy.rank };
+    this.player.statuses=createStatuses();this.enemy.statuses=createStatuses();
     while (this.player.exp >= expToNext(this.player.level)) {
       this.player.exp -= expToNext(this.player.level);
       this.levelUp();
@@ -399,6 +412,7 @@ export class Game {
     this.lastRunResult = null;
     this.rng = new Rng(1); this.rng.state = Number(state.rngState);
     this.feedback = null; this.feedbackId = 0;
+    this.player.statuses=normalizeStatuses(this.player.statuses);
     this.player.baseStats ||= { maxHp:this.player.maxHp, atk:this.player.atk, def:this.player.def, spd:this.player.spd, obs:this.player.obs };
     this.player.ownedItems ||= (this.player.inventory||[]).map((id,index)=>createOwnedItem(itemById(id),this.rng,{instanceId:`legacy-${index+1}`,source:'shop',rolled:false}));
     for(const owned of this.player.ownedItems)owned.trait=normalizeTrait(owned.trait);

@@ -23,6 +23,8 @@
 
 キー `formula-dungeon:save:v3` は、階層、player、meta、Run Stats、ラン限定の`runModifiers`、現在の`floorMutation: { id, startFloor, endFloor }`、専門強化レベルの`specializations`、取得済み節目、保留中の候補、連戦数、Threat、強敵状態、アイテム連番、ログ、RNG状態を保持します。読み込み時は`preparation`状態を検証し、装備実効値を再計算します。旧保存にラン補正・階層変異・専門強化がなければ補正なしとし、旧`v2`は固定装備IDをOwnedItemへ補完して安全に読み込めます。端末内メタとラン保存の恒久記録は、累計値を失わないよう読み込み時に統合します。
 
+状態異常は戦闘中だけ存在し、保存可能な`preparation`へ入る際に解除します。旧v3のplayerに`statuses`がない場合は空状態へ補完します。武器属性はItemDefinition側の定義でありOwnedItemの保存形式は変更しません。
+
 装備は`ItemDefinition`（定義、系列、Tier、レアリティ、基礎性能）と`OwnedItem`（instanceId、definitionId、rolledStats、trait、取得元、取得順）に分けます。ショップ品とドロップ品は同じ定義を使い、ドロップ時だけ小さな性能差と、30%で最大1個の特性IDを生成します。ショップ品と旧保存の装備は`trait: null`として扱います。
 
 ## Ownership / Lifecycle / Retention
