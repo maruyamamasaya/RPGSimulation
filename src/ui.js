@@ -1,10 +1,11 @@
 import { Game } from './game.js';
-import { telegraphText } from './enemies.js';
+import { currentIntent, telegraphText } from './enemies.js';
 import { bestiaryEntries } from './bestiary.js';
 import { escapeChance, expToNext } from './formulas.js';
 import { describeBonuses, itemById, RARITY_LABEL, shopItems } from './items.js';
 import { ITEM_KEYS, resolveShortcut } from './keyboard.js';
 import { displayItemName, traitDescription } from './equipment-traits.js';
+import { eventById } from './events.js';
 
 const STORAGE_KEY = 'formula-dungeon:meta:v1';
 const SAVE_KEY = 'formula-dungeon:save:v3';
@@ -55,11 +56,13 @@ function render() {
   const score = game.disclosure;
   $('#floor').textContent = `地下 ${game.floor}階`;
   $('#best').textContent = `最高 ${game.meta.bestFloor}階`;
+  $('#header-level').textContent = p.level;
+  $('#header-gold').textContent = `${p.gold} G`;
+  $('#header-threat').textContent = game.threatLabel;
   $('#player-level').textContent = `LV.${p.level}`;
   $('#player-stats').innerHTML = `
-    <div class="vital"><span>HP</span><strong>${p.hp} / ${p.maxHp}</strong></div>${meter(p.hp,p.maxHp,'hp')}
-    <div class="vital"><span>SP</span><strong>${p.sp} / ${p.maxSp}</strong></div>${meter(p.sp,p.maxSp,'sp')}
-    <div class="gold-line">Gold <strong>${p.gold} G</strong></div>
+    <div class="vital player-hp"><span>HP</span><strong>${p.hp} / ${p.maxHp}</strong></div>${meter(p.hp,p.maxHp,'hp')}
+    <div class="vital player-sp"><span>SP</span><strong>${p.sp} / ${p.maxSp}</strong></div>${meter(p.sp,p.maxSp,'sp')}
     <div class="stat-row"><span>ATK <b>${p.atk}${statDetail('atk')}</b></span><span>DEF <b>${p.def}${statDetail('def')}</b></span><span>SPD <b>${p.spd}${statDetail('spd')}</b></span><span>OBS <b>${p.obs}${statDetail('obs')}</b></span></div>
     <div class="equipment-line">武器：${equippedName('weapon')}<br>防具：${equippedName('armor')}</div>
     <div class="xp"><span>次のLV</span><b>${p.exp} / ${expToNext(p.level)} EXP</b>${meter(p.exp,expToNext(p.level),'xp')}</div>`;
@@ -68,6 +71,9 @@ function render() {
   $('#enemy-hp').innerHTML = score >= .82 ? `<span>HP ${e.hp} / ${e.maxHp}</span>${meter(e.hp,e.maxHp,'enemy')}` : score >= .48 ? `<span>HP 推定 ${Math.round(e.hp*.9)}〜${Math.round(e.hp*1.1)}</span>${meter(e.hp,e.maxHp,'enemy')}` : '<span>HP ???</span>';
   $('#enemy-stats').innerHTML = estimate('ATK',e.atk,score) + estimate('DEF',e.def,score-.08) + estimate('SPD',e.spd,score+.05);
   $('#telegraph').textContent = telegraphText(e);
+  const intent=currentIntent(e),dangerousIntent=intent.ultimate||intent.id==='charge';
+  $('#telegraph-panel').classList.toggle('danger',dangerousIntent);
+  $('#telegraph-label').textContent=dangerousIntent?'危険：次の敵行動':'次の敵行動';
   $('#trait').textContent = score >= .55 ? `${e.archetype.trait}。弱点：${score >= .78 ? e.archetype.weakness : 'さらに観察が必要'}` : '動きの意図はまだ読み切れない。観察すれば判明する。';
   $('#elite-alert').hidden = !e.elite;
   $('#elite-alert').className = `elite-alert ${e.rank || 'normal'}`;
@@ -78,14 +84,17 @@ function render() {
   const threatHint=p.obs>=18?` / 強敵率 約${Math.round(game.strongEnemyChance*100)}%`:'';
   $('#run-stats').innerHTML = `<p><span>戦闘ターン</span><b>${game.totalTurns}</b></p><p><span>獲得EXP</span><b>${game.runExp}</b></p><p><span>成長効率</span><b>${game.efficiency}</b></p><p><span>討伐知識</span><b>${game.knowledge}回</b></p><p><span>解析深度</span><b>${game.observation} / 3</b></p><p><span>ダンジョンの気配</span><b>${game.threatLabel}${threatHint}</b></p>`;
   const log = $('#log'); log.replaceChildren(...game.logs.map((entry, i) => { const li=document.createElement('li'); li.textContent=entry; if(i===0) li.className='latest'; return li; }));
+  $('#mobile-menu-button').setAttribute('aria-expanded', String(!$('#mobile-menu').hidden));
   $('#gameover').hidden = game.status !== 'gameover';
   if (game.status === 'gameover') renderGameover();
   $('#actions').hidden = game.status !== 'combat';
   $('#skills').hidden = game.status !== 'combat' || $('#skills').hidden;
   $('#preparation').hidden = game.status !== 'preparation';
+  $('#event-panel').hidden = game.status !== 'event';
   $('#shop').hidden = game.status !== 'shop';
   if (game.status === 'preparation') renderPreparation();
   if (game.status === 'shop') renderShop();
+  if (game.status === 'event') renderEvent();
   renderKeyboardHelp();
   showFeedback(game.feedback);
   saveMeta();
@@ -127,6 +136,19 @@ function renderItems(mode='items') {
   $('#items-modal').hidden=false;
 }
 
+function renderEvent(){
+  const event=game.currentEvent,definition=eventById(event?.id);if(!event||!definition)return;
+  $('#event-name').textContent=definition.name;$('#event-description').textContent=definition.description;
+  const altarGold=Math.max(30,game.floor*8),merchant=itemById(event.merchantEquipmentId);
+  $('#event-choices').innerHTML=definition.choices.map(([id,label])=>{
+    const disabled=(id==='offerHp'&&game.player.hp<=Math.max(1,Math.round(game.player.maxHp*.15)))||(id==='offerGold'&&game.player.gold<altarGold)||(id==='buyPotion'&&game.player.gold<itemById('herb').price)||(id==='buyEquipment'&&(!merchant||game.player.gold<merchant.price));
+    const detail=id==='offerGold'?`${altarGold} G`:id==='buyPotion'?`${itemById('herb').price} G`:id==='buyEquipment'&&merchant?`${merchant.name} / ${merchant.price} G`:'';
+    return `<button data-event-choice="${id}" ${disabled?'disabled':''}><b>${label}</b>${detail?`<small>${detail}</small>`:''}</button>`;
+  }).join('');
+  const resolved=event.phase==='result';$('#event-choices').hidden=resolved;$('#event-result').hidden=!resolved;
+  $('#event-result').innerHTML=resolved?`<p>${event.result}</p><button data-action="eventContinue"><b>次へ進む</b><small>戦闘へ</small></button>`:'';
+}
+
 function renderGameover() {
   const result=game.lastRunResult;
   if(!result)return;
@@ -157,8 +179,22 @@ function renderBestiary() {
   renderKeyboardHelp();
 }
 
+function closeMobileMenu() { $('#mobile-menu').hidden=true; $('#mobile-menu-button').setAttribute('aria-expanded','false'); }
+function openMobileMenu() { $('#mobile-menu').hidden=false; $('#mobile-menu-button').setAttribute('aria-expanded','true'); }
+function renderRecords() {
+  const best=game.meta.records||{};
+  $('#best-records').innerHTML=`<div><span>最高到達階層</span><b>${best.highestFloor||game.meta.bestFloor||1}</b></div><div><span>最多撃破数</span><b>${best.maxKills||0}</b></div><div><span>最多強敵撃破</span><b>${best.maxStrongKills||0}</b></div><div><span>最多Gold獲得</span><b>${best.maxGoldEarned||0}</b></div><div><span>最大与ダメージ</span><b>${best.maxDamage||0}</b></div>`;
+  $('#records-history').innerHTML=(game.meta.runHistory||[]).map(entry=>`<li><time>${new Date(entry.endedAt).toLocaleString()}</time><span>地下${entry.floor}階 / 撃破${entry.kills} / 強敵${entry.strongKills} / ${entry.goldEarned} G / LV.${entry.finalLevel}</span></li>`).join('')||'<li>記録はまだありません。</li>';
+  $('#records-modal').hidden=false;
+}
+function renderFullLog() {
+  $('#full-log').replaceChildren(...game.logs.map((entry,i)=>{const li=document.createElement('li');li.textContent=entry;if(i===0)li.className='latest';return li;}));
+  $('#log-modal').hidden=false;
+}
+
 function currentScreen() {
   if(!$('#selection-dialog').hidden)return 'selection';
+  if(!$('#mobile-menu').hidden||!$('#records-modal').hidden||!$('#log-modal').hidden)return 'none';
   if(!$('#bestiary-modal').hidden)return 'bestiary';
   if(!$('#title-screen').hidden||!$('#gameover').hidden)return 'none';
   if(!$('#items-modal').hidden)return 'inventory';
@@ -238,17 +274,25 @@ document.addEventListener('click', (event) => {
   if (!button) return;
   if(button.dataset.selectIndex!==undefined){showSelection(visibleSelections[Number(button.dataset.selectIndex)]);return;}
   if(button.dataset.selectAction){const map={buy:'confirmBuy',use:'use',equip:'equip',cancel:'cancelSelection'};handleCommand(map[button.dataset.selectAction]);return;}
+  if(button.dataset.eventChoice){game.chooseEvent(button.dataset.eventChoice);render();return;}
   if(button.dataset.keyAction){handleCommand(button.dataset.keyAction);return;}
   if (button.dataset.view) {
-    if(button.dataset.view==='close') $('#items-modal').hidden=true;
-    else if(button.dataset.view==='bestiary') renderBestiary();
+    if(button.dataset.view==='menu') openMobileMenu();
+    else if(button.dataset.view==='close-menu') closeMobileMenu();
+    else if(button.dataset.view==='close') $('#items-modal').hidden=true;
+    else if(button.dataset.view==='bestiary'){closeMobileMenu();renderBestiary();}
     else if(button.dataset.view==='close-bestiary') $('#bestiary-modal').hidden=true;
-    else renderItems(button.dataset.view);
+    else if(button.dataset.view==='records'){closeMobileMenu();renderRecords();}
+    else if(button.dataset.view==='close-records') $('#records-modal').hidden=true;
+    else if(button.dataset.view==='log'){closeMobileMenu();renderFullLog();}
+    else if(button.dataset.view==='close-log') $('#log-modal').hidden=true;
+    else {closeMobileMenu();renderItems(button.dataset.view);}
     renderKeyboardHelp(); return;
   }
   if (button.dataset.system === 'new') { game=new Game({meta:loadMeta()}); $('#title-screen').hidden=true; render(); return; }
   if (button.dataset.system === 'continue') { const save=readSave(); if(save){ game=new Game({savedState:save,meta:loadMeta()}); lastSaveTime=save.savedAt ? new Date(save.savedAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : null; $('#title-screen').hidden=true; render(); } return; }
-  if (button.dataset.system === 'save') { saveGame(); return; }
+  if (button.dataset.system === 'save') { closeMobileMenu(); saveGame(); return; }
+  if (button.dataset.system === 'reload') { location.reload(); return; }
   if (button.id === 'skill-toggle') { $('#skills').hidden = !$('#skills').hidden; renderKeyboardHelp(); return; }
   if (button.dataset.action) { const inventoryOpen=!$('#items-modal').hidden; performGameAction(button.dataset.action); if(inventoryOpen&&button.dataset.action==='usePotion')renderItems('items'); }
 });

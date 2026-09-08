@@ -10,19 +10,29 @@
 <body>
   <main class="shell">
     <header class="topbar">
-      <div><p class="eyebrow">INFINITE FORMULA DUNGEON</p><h1>深層演算域</h1></div>
-      <div class="topbar-actions"><button data-view="bestiary">敵図鑑</button><div class="depth"><span>現在深度</span><strong id="floor">地下 1階</strong><small id="best">最高 1階</small></div></div>
+      <div class="brand"><p class="eyebrow">INFINITE FORMULA DUNGEON</p><h1>深層演算域</h1></div>
+      <div class="topbar-actions">
+        <div class="session-summary" aria-label="現在の探索状況">
+          <div class="depth"><span>現在深度</span><strong id="floor">地下 1階</strong><small id="best">最高 1階</small></div>
+          <div><span>LEVEL</span><strong id="header-level">1</strong></div>
+          <div><span>GOLD</span><strong id="header-gold">0 G</strong></div>
+          <div><span>THREAT</span><strong id="header-threat">安定</strong></div>
+        </div>
+        <nav class="utility-nav" aria-label="補助機能"><button data-view="bestiary">敵図鑑</button></nav>
+        <button id="mobile-menu-button" class="mobile-menu-button" data-view="menu" aria-haspopup="dialog" aria-controls="mobile-menu">メニュー</button>
+      </div>
     </header>
     <section class="battle-grid" aria-live="polite">
-      <article class="card player-card"><div class="card-title"><span>探索者</span><strong id="player-level">LV.1</strong></div><div id="player-stats"></div></article>
-      <section class="encounter">
+      <section class="encounter" aria-label="敵情報">
         <div id="elite-alert" class="elite-alert" hidden></div>
         <p class="eyebrow">ENCOUNTER</p><h2 id="enemy-name">敵</h2><p id="enemy-level" class="enemy-level"></p>
         <div id="enemy-hp" class="enemy-hp"></div>
+        <div class="battle-center" aria-hidden="true"></div>
         <dl id="enemy-stats" class="intel-grid"></dl>
-        <div class="readout"><span>行動予兆</span><p id="telegraph"></p></div>
+        <div id="telegraph-panel" class="readout telegraph-panel" role="status"><span id="telegraph-label">次の敵行動</span><p id="telegraph"></p></div>
         <div class="readout subtle"><span>解析メモ</span><p id="trait"></p></div>
       </section>
+      <article class="card player-card"><div class="card-title"><span>探索者</span><strong id="player-level">LV.1</strong></div><div id="player-stats"></div></article>
       <article class="card run-card"><div class="card-title"><span>探索記録</span><strong>RUN</strong></div><div id="run-stats"></div><p class="hint">情報を読むほど、運に頼らず判断できます。</p></article>
     </section>
     <section id="actions" class="actions" aria-label="行動選択">
@@ -50,10 +60,14 @@
         <button data-action="usePotion"><b>回復アイテム</b><small id="potion-count">所持 0</small></button>
       </div>
     </section>
-    <section class="log-panel"><div class="log-heading"><h2>戦闘ログ</h2><span>最新の出来事が上</span></div><ol id="log"></ol></section>
+    <section id="event-panel" class="event-panel" hidden><div><p class="eyebrow">FLOOR EVENT</p><h2 id="event-name"></h2><p id="event-description"></p><div id="event-choices" class="event-choices"></div><div id="event-result" class="event-result" hidden></div></div></section>
+    <section class="log-panel"><div class="log-heading"><h2>戦闘ログ</h2><button class="full-log-trigger" data-view="log">すべて表示</button></div><ol id="log"></ol></section>
     <section id="shop" class="modal" hidden><div class="shop-window"><p class="eyebrow">FLOOR SHOP</p><h2>迷宮商店</h2><p id="shop-gold"></p><div id="shop-items" class="shop-list"></div><h3>所持装備</h3><div id="inventory" class="shop-list"></div><button data-action="closeShop">準備へ戻る</button></div></section>
     <section id="items-modal" class="modal" hidden><div class="shop-window"><p class="eyebrow">INVENTORY</p><h2 id="items-title">所持アイテム</h2><div id="items-list" class="shop-list"></div><button data-view="close">準備へ戻る</button></div></section>
     <section id="bestiary-modal" class="modal" hidden><div class="shop-window bestiary-window"><p class="eyebrow">ENEMY ARCHIVE</p><h2>敵図鑑</h2><p id="bestiary-progress"></p><div id="bestiary-list" class="bestiary-list"></div><button data-view="close-bestiary">ゲームへ戻る</button></div></section>
+    <section id="mobile-menu" class="modal mobile-menu" hidden><div><p class="eyebrow">GAME MENU</p><h2>メニュー</h2><div class="menu-grid"><button data-view="items">所持品</button><button data-view="equipment">装備</button><button data-view="bestiary">敵図鑑</button><button data-view="records">ラン記録</button><button data-view="log">戦闘ログ</button><button data-system="save">セーブ</button><button data-system="reload">更新</button></div><p class="version-info">Infinite Formula Dungeon v1.0.0</p><button data-view="close-menu">ゲームへ戻る</button></div></section>
+    <section id="records-modal" class="modal" hidden><div class="result-window"><p class="eyebrow">RUN RECORDS</p><h2>ラン記録</h2><div id="best-records" class="result-grid"></div><h3>直近のラン</h3><ol id="records-history" class="run-history"></ol><button data-view="close-records">ゲームへ戻る</button></div></section>
+    <section id="log-modal" class="modal" hidden><div class="shop-window"><p class="eyebrow">BATTLE LOG</p><h2>戦闘ログ</h2><ol id="full-log"></ol><button data-view="close-log">ゲームへ戻る</button></div></section>
     <section id="selection-dialog" class="modal selection-dialog" hidden><div><p class="eyebrow">SELECTION</p><h2 id="selection-name"></h2><p id="selection-detail"></p><div id="selection-actions"></div><button data-select-action="cancel"><kbd>X</kbd> 戻る</button></div></section>
     <section id="title-screen" class="modal"><div><p class="eyebrow">INFINITE FORMULA DUNGEON</p><h2>深層演算域</h2><button data-system="new">はじめから</button><button id="continue-button" data-system="continue">続きから</button></div></section>
     <section id="gameover" class="modal" hidden><div class="result-window"><p class="eyebrow">EXPEDITION FAILED</p><h2>探索終了</h2><p id="gameover-copy"></p><div id="run-result" class="result-grid"></div><h3>直近のラン</h3><ol id="run-history" class="run-history"></ol><button data-action="restart">新しい探索を始める</button></div></section>

@@ -16,13 +16,14 @@
 - **異常個体**: Threat連動の強敵抽選内でまれに現れる大幅に格上の敵。高報酬だが原則として逃走を推奨する。
 - **Threat**: 直前までの不安定な戦闘に反応する0〜100の気配。強敵率を3〜10%の範囲でわずかに動かし、安全な戦闘や鍛錬で減衰する。
 - **強敵ランク**: `NORMAL`、`ELITE`、`ABERRANT`。後二者は逃走を正解に含む高リスク・高報酬遭遇。
+- **イベント階層**: 通常の次階層進行時に15%で戦闘の代わりに発生する、一度選択して完結する遭遇。
 
 ## Entities and states
 
 - Run: floor、player、enemy、turn、status、log、efficiency counters。
 - Combatant: level、HP/maxHP、ATK、DEF、SPD、OBS、SP/maxSP。
 - Enemy archetype: 基礎倍率、危険度、特性、弱点、周期的な行動。
-- Run state: `combat`、`preparation`、`shop`、`gameover`。各ターンはプレイヤー行動、敵の予告行動、勝敗判定、次予告の順で解決する。
+- Run state: `combat`、`preparation`、`shop`、`event`、`gameover`。戦闘ターンはプレイヤー行動、敵の予告行動、勝敗判定、次予告の順で解決する。
 
 ## Business rules
 
@@ -42,6 +43,7 @@
 14. 戦闘開始時に敵図鑑の遭遇記録を更新し、勝利時だけ撃破数を増やす。逃走・敗北は撃破に含めない。
 15. ゲームオーバー時にRun Statsを結果として確定し、上回った自己ベストを更新して、終了日時付き履歴を新しい順に最大10件保持する。新しいランではRun Statsだけを初期化する。
 16. ドロップ装備は30%で`MIGHT`、`GUARD`、`VITAL`、`HUNTER`、`FORTUNE`、`LAST_STAND`のいずれか1特性を持つ。ショップ装備には付与せず、同じ特性を複数装備しても効果は重複しない。
+17. 通常の次階層進行確定時にseed付きRNGで15%のイベント判定を行う。イベントは一度の選択と結果確認で完結し、その後に同じ階層の戦闘へ移る。祭壇の補正はラン中だけ有効とする。
 
 ## Invariants
 

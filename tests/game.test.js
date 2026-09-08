@@ -10,6 +10,7 @@ import { isEditableTarget, KEY_MAPS, resolveShortcut } from '../src/keyboard.js'
 import { bestiaryEntries } from '../src/bestiary.js';
 import { createRunStats, finishRun, normalizeRunHistory } from '../src/run-records.js';
 import { displayItemName, EQUIPMENT_TRAITS, traitDescription } from '../src/equipment-traits.js';
+import { EVENT_CHANCE, FLOOR_EVENTS, eventEquipment, rollFloorEvent } from '../src/events.js';
 
 function equipTrait(game,definitionId,trait,instanceId=`test-${trait}`) {
   const definition=itemById(definitionId);
@@ -420,4 +421,56 @@ test('repeat, input lock, editable fields and modifiers suppress shortcuts', () 
   for(const modifier of ['metaKey','ctrlKey','altKey'])assert.equal(resolveShortcut({...base,[modifier]:true},'combat'),null);
   for(const tagName of ['INPUT','TEXTAREA','SELECT'])assert.equal(resolveShortcut({...base,target:{tagName}},'combat'),null);
   assert.equal(resolveShortcut({...base,target:{tagName:'DIV',isContentEditable:true}},'combat'),null);assert.equal(isEditableTarget({tagName:'INPUT'}),true);
+});
+
+test('floor event rolls are seeded, near fifteen percent, and include all five types', () => {
+  const sequence=seed=>{const rng=new Rng(seed);return Array.from({length:300},()=>rollFloorEvent(rng));};
+  assert.deepEqual(sequence(412),sequence(412));
+  const rng=new Rng(91),results=Array.from({length:30000},()=>rollFloorEvent(rng)),events=results.filter(Boolean);
+  assert.ok(events.length/30000>.14&&events.length/30000<.16);assert.deepEqual(new Set(events),new Set(FLOOR_EVENTS.map(event=>event.id)));assert.equal(EVENT_CHANCE,.15);
+});
+
+test('advance deterministically chooses combat or an event and event completion starts combat', () => {
+  const normal=new Game({seed:1});normal.status='preparation';normal.rng.next=()=>.9;normal.dispatch('advance');assert.equal(normal.status,'combat');assert.equal(normal.floor,2);
+  const event=new Game({seed:1});event.status='preparation';event.rng.next=()=>.1;event.dispatch('advance');assert.equal(event.status,'event');assert.equal(event.currentEvent.id,'fountain');
+  assert.equal(event.chooseEvent('leave'),true);assert.equal(event.currentEvent.phase,'result');assert.equal(event.finishEvent(),true);assert.equal(event.status,'combat');assert.equal(event.floor,2);
+});
+
+test('fountain healing caps at maximum HP and leaving has no effect', () => {
+  const game=new Game({seed:2});game.floor=4;game.player.hp=90;game.beginEvent('fountain');assert.equal(game.chooseEvent('drink'),true);assert.equal(game.player.hp,game.player.maxHp);
+  const leave=new Game({seed:2});leave.player.hp=60;leave.beginEvent('fountain');leave.chooseEvent('leave');assert.equal(leave.player.hp,60);
+});
+
+test('altar costs are safe and grant run-only attack or defense modifiers', () => {
+  const hp=new Game({seed:3});hp.player.hp=10;hp.beginEvent('altar');assert.equal(hp.chooseEvent('offerHp'),false);assert.equal(hp.player.hp,10);
+  hp.player.hp=100;const beforeAtk=hp.player.atk;assert.equal(hp.chooseEvent('offerHp'),true);assert.equal(hp.runModifiers.atk,.05);assert.ok(hp.player.atk>beforeAtk);assert.ok(hp.player.hp>0);
+  const gold=new Game({seed:4});gold.floor=8;gold.player.gold=20;gold.beginEvent('altar');assert.equal(gold.chooseEvent('offerGold'),false);assert.equal(gold.player.gold,20);
+  gold.player.gold=100;const beforeDef=gold.player.def;assert.equal(gold.chooseEvent('offerGold'),true);assert.equal(gold.runModifiers.def,.05);assert.ok(gold.player.def>beforeDef);
+});
+
+test('chest choices support Gold, compatible trait equipment, damage, and ignore', () => {
+  const gold=new Game({seed:5});gold.floor=10;gold.beginEvent('chest');gold.rng.next=()=>.1;assert.equal(gold.chooseEvent('open'),true);assert.ok(gold.player.gold>0);assert.equal(gold.runStats.goldEarned,gold.player.gold);
+  const gear=new Game({seed:6});gear.floor=20;gear.beginEvent('chest');let values=[.6,.2,.5,.2,.1];gear.rng.next=()=>values.shift()??.1;assert.equal(gear.chooseEvent('open'),true);assert.equal(gear.player.ownedItems.length,1);assert.ok('trait' in gear.player.ownedItems[0]);assert.equal(gear.runStats.equipmentAcquired,1);
+  const trap=new Game({seed:7});trap.player.hp=20;trap.beginEvent('chest');trap.rng.next=()=>.99;trap.chooseEvent('inspect');assert.ok(trap.player.hp>=1);
+  const leave=new Game({seed:8});leave.beginEvent('chest');leave.chooseEvent('leave');assert.equal(leave.player.gold,0);
+  const traitReward=Array.from({length:100},(_,seed)=>eventEquipment(20,new Rng(seed+1),`event-${seed}`)).find(item=>item.trait);
+  assert.ok(traitReward);assert.ok(itemById(traitReward.definitionId));assert.equal(Object.keys(traitReward).includes('rolledStats'),true);
+});
+
+test('merchant purchases reuse normal prices and shop equipment has no trait', () => {
+  const potion=new Game({seed:9});potion.player.gold=44;potion.beginEvent('merchant');assert.equal(potion.chooseEvent('buyPotion'),false);potion.player.gold=45;assert.equal(potion.chooseEvent('buyPotion'),true);assert.equal(potion.player.consumables.herb,1);assert.equal(potion.player.gold,0);
+  const gear=new Game({seed:10});gear.floor=20;gear.player.gold=9999;gear.beginEvent('merchant');const price=itemById(gear.currentEvent.merchantEquipmentId).price;assert.equal(gear.chooseEvent('buyEquipment'),true);assert.equal(gear.player.gold,9999-price);assert.equal(gear.player.ownedItems[0].trait,null);
+});
+
+test('dangerous path distinguishes high-risk rewards from the safe route', () => {
+  const risky=new Game({seed:11});risky.floor=9;risky.beginEvent('dangerousPath');risky.rng.next=()=>.1;risky.chooseEvent('proceed');assert.ok(risky.player.gold>=25+risky.floor*8);
+  const hurt=new Game({seed:12});hurt.player.hp=15;hurt.beginEvent('dangerousPath');hurt.rng.next=()=>.99;hurt.chooseEvent('proceed');assert.equal(hurt.player.hp,1);
+  const safe=new Game({seed:13});safe.floor=9;safe.beginEvent('dangerousPath');safe.rng.next=()=>.1;safe.chooseEvent('safe');assert.equal(safe.player.gold,4+safe.floor*2);
+});
+
+test('run modifiers survive v3 saves, default for old saves, and reset on a new run', () => {
+  const game=new Game({seed:14});game.player.hp=100;game.beginEvent('altar');game.chooseEvent('offerHp');game.status='preparation';const saved=game.serialize();
+  const restored=new Game({savedState:JSON.parse(JSON.stringify(saved))});assert.deepEqual(restored.runModifiers,{atk:.05,def:0});assert.equal(restored.player.atk,game.player.atk);
+  const legacy=JSON.parse(JSON.stringify(saved));delete legacy.runModifiers;const old=new Game({savedState:legacy});assert.deepEqual(old.runModifiers,{atk:0,def:0});
+  restored.startRun();assert.deepEqual(restored.runModifiers,{atk:0,def:0});
 });

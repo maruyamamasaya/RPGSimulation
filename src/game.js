@@ -6,6 +6,7 @@ import { createOwnedItem, initialShopProgress, itemById, rollDrop, shopItems } f
 import { mergeMeta, normalizeMeta, recordDefeat, recordEncounter } from './bestiary.js';
 import { createRunStats, finishRun, normalizeRunStats } from './run-records.js';
 import { equippedTraits, goldRewardMultiplier, normalizeTrait, outgoingDamageMultiplier, displayItemName } from './equipment-traits.js';
+import { createFloorEvent, eventById, eventEquipment, normalizeRunModifiers, rollFloorEvent } from './events.js';
 
 export function createPlayer() {
   return { level: 1, maxHp: 100, hp: 100, atk: 12, def: 10, spd: 10, obs: 10, maxSp: 30, sp: 30, exp: 0,
@@ -30,6 +31,8 @@ export class Game {
     this.observation = 0;
     this.runExp = 0;
     this.runStats = createRunStats();
+    this.runModifiers = normalizeRunModifiers();
+    this.currentEvent = null;
     this.lastRunResult = null;
     this.totalTurns = 0;
     this.totalHpLost = 0;
@@ -68,6 +71,7 @@ export class Game {
     if (action === 'restart' && this.status === 'gameover') { this.startRun(); return; }
     if (this.status === 'preparation') return this.preparationAction(action);
     if (this.status === 'shop') return this.shopAction(action);
+    if (this.status === 'event') return action==='eventContinue'?this.finishEvent():undefined;
     if (this.status !== 'combat') return;
     const beforeHp = this.player.hp;
     this.feedback = null;
@@ -209,7 +213,9 @@ export class Game {
   preparationAction(action) {
     this.feedback = null;
     if (action === 'advance') {
-      this.floor += 1; this.sameFloorBattles = 0; this.status = 'combat'; this.spawnEnemy();
+      this.floor += 1; this.sameFloorBattles = 0;
+      const eventId=rollFloorEvent(this.rng);
+      if(eventId)this.beginEvent(eventId);else{this.status = 'combat';this.spawnEnemy();}
     } else if (action === 'train') {
       this.sameFloorBattles += 1; this.threat=Math.max(0,this.threat-3); this.status = 'combat'; this.spawnEnemy();
     } else if (action === 'openShop') this.status = 'shop';
@@ -254,6 +260,53 @@ export class Game {
     return true;
   }
 
+  beginEvent(id) {
+    const event=createFloorEvent(id,this.floor,this.rng);
+    if(!event)return false;
+    this.currentEvent=event;this.status='event';this.meta.bestFloor=Math.max(this.meta.bestFloor,this.floor);
+    this.addLog(`イベント「${eventById(id).name}」が発生した。`);return true;
+  }
+
+  chooseEvent(choice) {
+    if(this.status!=='event'||this.currentEvent?.phase!=='choice')return false;
+    const event=this.currentEvent;let result='';
+    const heal=rate=>{const before=this.player.hp,amount=Math.round(this.player.maxHp*rate);this.player.hp=Math.min(this.player.maxHp,this.player.hp+amount);return this.player.hp-before;};
+    const damagePlayer=rate=>{const amount=Math.min(Math.max(0,this.player.hp-1),Math.max(1,Math.round(this.player.maxHp*rate)));this.player.hp-=amount;return amount;};
+    const grantGold=amount=>{this.player.gold+=amount;this.runStats.goldEarned+=amount;return amount;};
+    const grantEquipment=source=>{const owned=eventEquipment(this.floor,this.rng,`item-${++this.itemCounter}`,source);this.player.ownedItems.push(owned);this.player.inventory.push(owned.definitionId);this.runStats.equipmentAcquired+=1;return owned;};
+    if(event.id==='fountain'){
+      if(choice==='drink')result=`泉の水でHPを${heal(.25)}回復した。`;
+      else if(choice==='leave')result='泉には触れず、先へ進んだ。';else return false;
+    }else if(event.id==='altar'){
+      if(choice==='offerHp'){
+        const cost=Math.max(1,Math.round(this.player.maxHp*.15));if(this.player.hp<=cost)return false;
+        this.player.hp-=cost;this.runModifiers.atk=Math.min(.5,this.runModifiers.atk+.05);this.recalculateEquipment();result=`HPを${cost}捧げ、このラン中のATKが5%上昇した。`;
+      }else if(choice==='offerGold'){
+        const cost=Math.max(30,this.floor*8);if(this.player.gold<cost)return false;
+        this.player.gold-=cost;this.runModifiers.def=Math.min(.5,this.runModifiers.def+.05);this.recalculateEquipment();result=`${cost} Goldを捧げ、このラン中のDEFが5%上昇した。`;
+      }else if(choice==='leave')result='祭壇には触れず、先へ進んだ。';else return false;
+    }else if(event.id==='chest'){
+      if(choice==='open'){
+        const roll=this.rng.next();if(roll<.5){const gold=grantGold(18+this.floor*6+this.rng.int(0,18));result=`宝箱から${gold} Goldを得た。`;}else if(roll<.8){const owned=grantEquipment('drop');result=`宝箱から${itemById(owned.definitionId).name}を得た。`;}else result=`罠が作動し、HPに${damagePlayer(.14)}ダメージを受けた。`;
+      }else if(choice==='inspect'){
+        const roll=this.rng.next();if(roll<.65){const gold=grantGold(8+this.floor*3+this.rng.int(0,8));result=`安全な区画から${gold} Goldを得た。`;}else if(roll<.92){const owned=grantEquipment('drop');result=`罠を外し、${itemById(owned.definitionId).name}を得た。`;}else result=`小さな罠でHPに${damagePlayer(.05)}ダメージを受けた。`;
+      }else if(choice==='leave')result='宝箱を無視して先へ進んだ。';else return false;
+    }else if(event.id==='merchant'){
+      if(choice==='buyPotion'){
+        const item=itemById('herb');if(this.player.gold<item.price)return false;this.player.gold-=item.price;this.player.consumables[item.id]=(this.player.consumables[item.id]||0)+1;result=`${item.name}を${item.price} Goldで購入した。`;
+      }else if(choice==='buyEquipment'){
+        const item=itemById(event.merchantEquipmentId);if(!item||this.player.gold<item.price)return false;this.player.gold-=item.price;const owned=createOwnedItem(item,this.rng,{instanceId:`item-${++this.itemCounter}`,source:'shop',rolled:false});this.player.ownedItems.push(owned);this.player.inventory.push(item.id);this.runStats.equipmentAcquired+=1;result=`${item.name}を${item.price} Goldで購入した。`;
+      }else if(choice==='leave')result='取引を断り、先へ進んだ。';else return false;
+    }else if(event.id==='dangerousPath'){
+      if(choice==='proceed'){
+        const roll=this.rng.next();if(roll<.38){const gold=grantGold(25+this.floor*8+this.rng.int(0,24));result=`危険を越え、${gold} Goldを得た。`;}else if(roll<.62){const owned=grantEquipment('drop');result=`危険を越え、${itemById(owned.definitionId).name}を得た。`;}else result=`道が崩れ、HPに${damagePlayer(.18)}ダメージを受けた。`;
+      }else if(choice==='safe'){if(this.rng.next()<.55){const gold=grantGold(4+this.floor*2);result=`安全な迂回路で${gold} Goldを拾った。`;}else result='安全に通過したが、何も見つからなかった。';}else return false;
+    }else return false;
+    event.phase='result';event.result=result;this.addLog(result);return true;
+  }
+
+  finishEvent(){if(this.status!=='event'||this.currentEvent?.phase!=='result')return false;this.currentEvent=null;this.status='combat';this.spawnEnemy();return true;}
+
   unequip(id) {
     if (this.status !== 'shop' && this.status !== 'preparation') return false;
     const slot=Object.keys(this.player.equipment).find(key=>this.player.equipment[key]===id);
@@ -276,6 +329,8 @@ export class Game {
     if(traits.has('MIGHT'))this.player.atk=Math.round(this.player.atk*1.1);
     if(traits.has('GUARD'))this.player.def=Math.round(this.player.def*1.1);
     if(traits.has('VITAL'))this.player.maxHp=Math.round(this.player.maxHp*1.1);
+    this.player.atk=Math.round(this.player.atk*(1+(this.runModifiers?.atk||0)));
+    this.player.def=Math.round(this.player.def*(1+(this.runModifiers?.def||0)));
     this.player.hp = Math.min(this.player.maxHp, Math.max(0, this.player.hp + Math.max(0, this.player.maxHp - previousMax)));
   }
 
@@ -294,7 +349,7 @@ export class Game {
   serialize() {
     return JSON.parse(JSON.stringify({ version:3, floor:this.floor, player:this.player, enemy:this.enemy, status:this.status,
       turn:this.turn, observation:this.observation, runExp:this.runExp, totalTurns:this.totalTurns, totalHpLost:this.totalHpLost,
-      sameFloorBattles:this.sameFloorBattles, lastReward:this.lastReward, runStats:this.runStats, logs:this.logs, meta:this.meta, rngState:this.rng.state, threat:this.threat, itemCounter:this.itemCounter }));
+      sameFloorBattles:this.sameFloorBattles, lastReward:this.lastReward, runStats:this.runStats, runModifiers:this.runModifiers, currentEvent:this.currentEvent, logs:this.logs, meta:this.meta, rngState:this.rng.state, threat:this.threat, itemCounter:this.itemCounter }));
   }
 
   restore(state) {
@@ -302,6 +357,8 @@ export class Game {
     Object.assign(this, state);
     this.meta = normalizeMeta(state.meta);
     this.runStats = normalizeRunStats(state.runStats);
+    this.runModifiers = normalizeRunModifiers(state.runModifiers);
+    this.currentEvent = state.currentEvent || null;
     this.lastRunResult = null;
     this.rng = new Rng(1); this.rng.state = Number(state.rngState);
     this.feedback = null; this.feedbackId = 0;
