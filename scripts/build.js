@@ -5,4 +5,6 @@ const output = new URL("../dist/", import.meta.url);
 await rm(output, { recursive: true, force: true });
 await mkdir(output, { recursive: true });
 await cp(new URL("../index.html", import.meta.url), new URL("index.html", output));
+await cp(new URL("../site.webmanifest", import.meta.url), new URL("site.webmanifest", output));
+await cp(new URL("../assets/", import.meta.url), new URL("assets/", output), { recursive: true });
 await cp(new URL("../src/", import.meta.url), new URL("src/", output), { recursive: true });
