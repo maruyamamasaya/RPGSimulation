@@ -7,6 +7,6 @@
     "dev": "python3 -m http.server 4173",
     "build": "node scripts/build.js",
     "test": "node --test",
-    "check": "node --check src/bestiary.js && node --check src/config.js && node --check src/enemies.js && node --check src/equipment-traits.js && node --check src/events.js && node --check src/formulas.js && node --check src/game.js && node --check src/items.js && node --check src/keyboard.js && node --check src/mutations.js && node --check src/rng.js && node --check src/run-records.js && node --check src/ui.js && node --check tests/game.test.js"
+    "check": "node --check src/bestiary.js && node --check src/config.js && node --check src/enemies.js && node --check src/equipment-traits.js && node --check src/events.js && node --check src/formulas.js && node --check src/game.js && node --check src/items.js && node --check src/keyboard.js && node --check src/mutations.js && node --check src/rng.js && node --check src/run-records.js && node --check src/specializations.js && node --check src/ui.js && node --check tests/game.test.js"
   }
 }

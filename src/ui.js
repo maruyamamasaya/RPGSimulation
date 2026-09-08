@@ -7,6 +7,7 @@ import { ITEM_KEYS, resolveShortcut } from './keyboard.js';
 import { displayItemName, traitDescription } from './equipment-traits.js';
 import { eventById } from './events.js';
 import { mutationById } from './mutations.js';
+import { buildSummary, specializationById } from './specializations.js';
 
 const STORAGE_KEY = 'formula-dungeon:meta:v1';
 const SAVE_KEY = 'formula-dungeon:save:v3';
@@ -85,8 +86,10 @@ function render() {
   $('#escape-rate').textContent = `成功率 ${Math.round(escapeChance(p,e,game.observation)*100)}%`;
   const threatHint=p.obs>=18?` / 強敵率 約${Math.round(game.strongEnemyChance*100)}%`:'';
   const mutation=mutationById(game.floorMutation?.id);
-  $('#run-stats').innerHTML = `<p><span>戦闘ターン</span><b>${game.totalTurns}</b></p><p><span>獲得EXP</span><b>${game.runExp}</b></p><p><span>成長効率</span><b>${game.efficiency}</b></p><p><span>討伐知識</span><b>${game.knowledge}回</b></p><p><span>解析深度</span><b>${game.observation} / 3</b></p><p><span>ダンジョンの気配</span><b>${game.threatLabel}${threatHint}</b></p><p><span>階層変異</span><b>${mutation?.name||'なし'}</b></p>`;
+  const build=buildSummary(game.specializations);
+  $('#run-stats').innerHTML = `<p><span>戦闘ターン</span><b>${game.totalTurns}</b></p><p><span>獲得EXP</span><b>${game.runExp}</b></p><p><span>成長効率</span><b>${game.efficiency}</b></p><p><span>討伐知識</span><b>${game.knowledge}回</b></p><p><span>解析深度</span><b>${game.observation} / 3</b></p><p><span>ダンジョンの気配</span><b>${game.threatLabel}${threatHint}</b></p><p><span>階層変異</span><b>${mutation?.name||'なし'}</b></p><p><span>現在のビルド</span><b>${build}</b></p>`;
   $('#mutation-menu-info').textContent=mutation?`変異：${mutation.name} — ${mutation.description}`:'変異：なし（1〜9階）';
+  $('#build-menu-info').textContent=`現在のビルド：${build}`;
   if(game.mutationNotice&&game.mutationNotice!==shownMutationNotice){shownMutationNotice=game.mutationNotice;const notice=$('#mutation-notice');notice.textContent=game.mutationNotice;notice.hidden=false;setTimeout(()=>{notice.hidden=true;},3600);}
   const log = $('#log'); log.replaceChildren(...game.logs.map((entry, i) => { const li=document.createElement('li'); li.textContent=entry; if(i===0) li.className='latest'; return li; }));
   $('#mobile-menu-button').setAttribute('aria-expanded', String(!$('#mobile-menu').hidden));
@@ -96,10 +99,12 @@ function render() {
   $('#skills').hidden = game.status !== 'combat' || $('#skills').hidden;
   $('#preparation').hidden = game.status !== 'preparation';
   $('#event-panel').hidden = game.status !== 'event';
+  $('#specialization-modal').hidden = !game.pendingSpecialization;
   $('#shop').hidden = game.status !== 'shop';
   if (game.status === 'preparation') renderPreparation();
   if (game.status === 'shop') renderShop();
   if (game.status === 'event') renderEvent();
+  if (game.pendingSpecialization) renderSpecialization();
   renderKeyboardHelp();
   showFeedback(game.feedback);
   saveMeta();
@@ -139,6 +144,12 @@ function renderItems(mode='items') {
   let html=visibleSelections.map((entry,index)=>entry.kind==='consumable'?`<article class="rarity-card rarity-${entry.item.rarity}"><div><b>${ITEM_KEYS[index]?`<kbd>${ITEM_KEYS[index].toUpperCase()}</kbd> `:''}${entry.item.name}</b><small>consumable / ${RARITY_LABEL[entry.item.rarity]} / ${entry.item.rarity.toUpperCase()}</small><p>${describeBonuses(entry.item.baseStats)}</p><small>所持 ${entry.count}</small></div><button data-select-index="${index}">選択</button></article>`:itemCard(entry.item,entry.owned,ITEM_KEYS[index],index)).join('');
   $('#items-list').innerHTML=html||'<p>該当するアイテムはありません。</p>';
   $('#items-modal').hidden=false;
+}
+
+function renderSpecialization(){
+  const pending=game.pendingSpecialization;if(!pending)return;
+  $('#specialization-copy').textContent=`Level ${pending.level} 到達。今回のランに追加する強化を1つ選んでください。`;
+  $('#specialization-choices').innerHTML=pending.candidates.map(id=>{const entry=specializationById(id),next=(game.specializations[id]||0)+1;return `<button data-specialization="${id}"><b>${entry.name} Lv${next}</b><span>${entry.description}</span></button>`;}).join('');
 }
 
 function renderEvent(){
@@ -199,7 +210,7 @@ function renderFullLog() {
 
 function currentScreen() {
   if(!$('#selection-dialog').hidden)return 'selection';
-  if(!$('#mobile-menu').hidden||!$('#records-modal').hidden||!$('#log-modal').hidden)return 'none';
+  if(!$('#mobile-menu').hidden||!$('#records-modal').hidden||!$('#log-modal').hidden||!$('#specialization-modal').hidden)return 'none';
   if(!$('#bestiary-modal').hidden)return 'bestiary';
   if(!$('#title-screen').hidden||!$('#gameover').hidden)return 'none';
   if(!$('#items-modal').hidden)return 'inventory';
@@ -280,6 +291,7 @@ document.addEventListener('click', (event) => {
   if(button.dataset.selectIndex!==undefined){showSelection(visibleSelections[Number(button.dataset.selectIndex)]);return;}
   if(button.dataset.selectAction){const map={buy:'confirmBuy',use:'use',equip:'equip',cancel:'cancelSelection'};handleCommand(map[button.dataset.selectAction]);return;}
   if(button.dataset.eventChoice){game.chooseEvent(button.dataset.eventChoice);render();return;}
+  if(button.dataset.specialization){game.chooseSpecialization(button.dataset.specialization);render();return;}
   if(button.dataset.keyAction){handleCommand(button.dataset.keyAction);return;}
   if (button.dataset.view) {
     if(button.dataset.view==='menu') openMobileMenu();

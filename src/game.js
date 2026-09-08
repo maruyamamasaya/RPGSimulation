@@ -8,6 +8,7 @@ import { createRunStats, finishRun, normalizeRunStats } from './run-records.js';
 import { equippedTraits, goldRewardMultiplier, normalizeTrait, outgoingDamageMultiplier, displayItemName } from './equipment-traits.js';
 import { createFloorEvent, eventById, eventEquipment, normalizeRunModifiers, rollFloorEvent } from './events.js';
 import { mutationBonus, mutationById, mutationMultiplier, normalizeFloorMutation, rollFloorMutation } from './mutations.js';
+import { buildDamageMultiplier, buildDropBonus, buildGoldMultiplier, buildIncomingMultiplier, createSpecializations, MAX_SPECIALIZATIONS, normalizeSpecializations, rollSpecializationCandidates, SPECIALIZATION_MILESTONES, specializationById, specializationCount } from './specializations.js';
 
 export function createPlayer() {
   return { level: 1, maxHp: 100, hp: 100, atk: 12, def: 10, spd: 10, obs: 10, maxSp: 30, sp: 30, exp: 0,
@@ -36,6 +37,10 @@ export class Game {
     this.currentEvent = null;
     this.floorMutation = null;
     this.mutationNotice = null;
+    this.specializations=createSpecializations();
+    this.specializationMilestones=[];
+    this.specializationQueue=[];
+    this.pendingSpecialization=null;
     this.lastRunResult = null;
     this.totalTurns = 0;
     this.totalHpLost = 0;
@@ -142,7 +147,7 @@ export class Game {
 
   hitEnemy(multiplier, label) {
     const reduction = this.enemy.guarded ? 0.48 : 1;
-    const dealt = damage(this.player.atk, this.enemy.def, multiplier, this.rng, reduction*outgoingDamageMultiplier(this.player,this.enemy));
+    const dealt = damage(this.player.atk, this.enemy.def, multiplier, this.rng, reduction*outgoingDamageMultiplier(this.player,this.enemy)*buildDamageMultiplier(this.player,this.specializations));
     this.enemy.hp = Math.max(0, this.enemy.hp - dealt);
     this.runStats.maxDamage = Math.max(this.runStats.maxDamage,dealt);
     this.addLog(`${label}で${dealt}ダメージ。${this.enemy.guarded ? '敵の防御に阻まれた。' : ''}`);
@@ -165,12 +170,13 @@ export class Game {
         ? Math.max(1, Math.round(this.player.maxHp * (0.76 + this.rng.next() * 0.08) + this.enemy.atk * 0.28))
         : damage(this.enemy.atk, this.player.def, intent.multiplier, this.rng, 1);
       const raw=Math.max(1,Math.round(baseRaw*mutationMultiplier(this.floorMutation,'BERSERK',1.15)));
-      const dealt = guard ? Math.max(1, Math.round(raw * (1 - CONFIG.guardReduction))) : raw;
+      const defendedRaw=Math.max(1,Math.round(raw*buildIncomingMultiplier(this.specializations)));
+      const dealt = guard ? Math.max(1, Math.round(defendedRaw * (1 - CONFIG.guardReduction))) : defendedRaw;
       const hpBefore = this.player.hp;
       this.player.hp = Math.max(0, this.player.hp - dealt);
       this.addLog(`${this.enemy.name}は${intent.text}`);
       if (guard) this.addLog(`防御成功：本来ダメージ ${raw} → 防御後 ${dealt}。HP ${hpBefore} → ${this.player.hp}`);
-      else this.addLog(`本来ダメージ：${raw}。HP ${hpBefore} → ${this.player.hp}${intent.ultimate ? '（予兆された危険攻撃）' : ''}`);
+      else this.addLog(defendedRaw!==raw?`堅守：本来ダメージ ${raw} → ${dealt}。HP ${hpBefore} → ${this.player.hp}${intent.ultimate ? '（予兆された危険攻撃）' : ''}`:`本来ダメージ：${raw}。HP ${hpBefore} → ${this.player.hp}${intent.ultimate ? '（予兆された危険攻撃）' : ''}`);
       if(intent.ultimate&&!guard)this.battleMetrics.unguardedUltimateHits += 1;
       this.feedback = { target: 'player', type: guard ? 'block' : 'damage', amount: dealt, raw, nonce: ++this.feedbackId };
     }
@@ -180,7 +186,7 @@ export class Game {
   win() {
     const rankMultiplier=this.enemy.rank==='aberrant'?18:this.enemy.rank==='elite'?10:1;
     const reward = Math.max(1, Math.round(expReward(18 + this.enemy.level * 8, this.enemy.level, this.player.level, this.enemy.archetype.danger) * this.rewardRate * rankMultiplier * mutationMultiplier(this.floorMutation,'TRAINING',1.2)));
-    const gold = Math.max(1,Math.round(goldReward(this.enemy.archetype.baseGold, this.enemy.level, this.player.level, this.enemy.archetype.danger, this.rng, this.rewardRate) * rankMultiplier * goldRewardMultiplier(this.player) * mutationMultiplier(this.floorMutation,'ABUNDANCE',1.25)));
+    const gold = Math.max(1,Math.round(goldReward(this.enemy.archetype.baseGold, this.enemy.level, this.player.level, this.enemy.archetype.danger, this.rng, this.rewardRate) * rankMultiplier * goldRewardMultiplier(this.player) * buildGoldMultiplier(this.specializations) * mutationMultiplier(this.floorMutation,'ABUNDANCE',1.25)));
     this.player.exp += reward;
     this.player.gold += gold;
     this.runExp += reward;
@@ -189,7 +195,7 @@ export class Game {
     this.runStats.goldEarned += gold;
     recordDefeat(this.meta, this.enemy.id);
     this.meta.knowledge[this.enemy.id] = this.knowledge + 1;
-    const drop=rollDrop(this.enemy,this.floor,this.rng,++this.itemCounter,mutationBonus(this.floorMutation,'TREASURE',.10));
+    const drop=rollDrop(this.enemy,this.floor,this.rng,++this.itemCounter,mutationBonus(this.floorMutation,'TREASURE',.10)+buildDropBonus(this.specializations));
     if(drop){const def=itemById(drop.definitionId);if(def.type==='consumable')this.player.consumables[def.id]=(this.player.consumables[def.id]||0)+1;else{this.player.ownedItems.push(drop);this.player.inventory.push(def.id);this.runStats.equipmentAcquired+=1}this.addLog(`DROP：${displayItemName(def,drop)}（${def.rarity.toUpperCase()}）`)}
     this.updateThreat();
     this.addLog(`${this.enemy.elite?'強敵撃破！ ':'勝利！'}EXP +${reward} / Gold +${gold}（報酬率 ${Math.round(this.rewardRate*100)}%）`);
@@ -198,7 +204,7 @@ export class Game {
       this.player.exp -= expToNext(this.player.level);
       this.levelUp();
     }
-    this.status = 'preparation';
+    if(this.specializationQueue.length)this.offerNextSpecialization();else this.status = 'preparation';
   }
 
   levelUp() {
@@ -211,6 +217,15 @@ export class Game {
     this.player.hp = this.player.maxHp;
     this.player.sp = this.player.maxSp;
     this.addLog(`レベル${this.player.level}へ！ HP+${growth.hp} ATK+${growth.atk} DEF+${growth.def} SPD+${growth.spd} OBS+${growth.obs}`);
+    if(SPECIALIZATION_MILESTONES.includes(this.player.level)&&!this.specializationMilestones.includes(this.player.level)&&!this.specializationQueue.includes(this.player.level)&&specializationCount(this.specializations)+this.specializationQueue.length<MAX_SPECIALIZATIONS)this.specializationQueue.push(this.player.level);
+  }
+
+  offerNextSpecialization(){const level=this.specializationQueue.shift();if(!level)return false;this.pendingSpecialization={level,candidates:rollSpecializationCandidates(this.rng)};this.status='preparation';this.addLog(`レベル${level}到達。専門強化を選択できる。`);return true;}
+
+  chooseSpecialization(id){
+    if(!this.pendingSpecialization?.candidates.includes(id)||specializationCount(this.specializations)>=MAX_SPECIALIZATIONS)return false;
+    this.specializations[id]+=1;this.specializationMilestones.push(this.pendingSpecialization.level);this.addLog(`専門強化「${specializationById(id).name} Lv${this.specializations[id]}」を取得した。`);this.pendingSpecialization=null;
+    if(this.specializationQueue.length)this.offerNextSpecialization();else this.status='preparation';return true;
   }
 
   preparationAction(action) {
@@ -364,7 +379,7 @@ export class Game {
   serialize() {
     return JSON.parse(JSON.stringify({ version:3, floor:this.floor, player:this.player, enemy:this.enemy, status:this.status,
       turn:this.turn, observation:this.observation, runExp:this.runExp, totalTurns:this.totalTurns, totalHpLost:this.totalHpLost,
-      sameFloorBattles:this.sameFloorBattles, lastReward:this.lastReward, runStats:this.runStats, runModifiers:this.runModifiers, currentEvent:this.currentEvent, floorMutation:this.floorMutation, logs:this.logs, meta:this.meta, rngState:this.rng.state, threat:this.threat, itemCounter:this.itemCounter }));
+      sameFloorBattles:this.sameFloorBattles, lastReward:this.lastReward, runStats:this.runStats, runModifiers:this.runModifiers, currentEvent:this.currentEvent, floorMutation:this.floorMutation, specializations:this.specializations, specializationMilestones:this.specializationMilestones, specializationQueue:this.specializationQueue, pendingSpecialization:this.pendingSpecialization, logs:this.logs, meta:this.meta, rngState:this.rng.state, threat:this.threat, itemCounter:this.itemCounter }));
   }
 
   restore(state) {
@@ -376,6 +391,11 @@ export class Game {
     this.currentEvent = state.currentEvent || null;
     this.floorMutation = normalizeFloorMutation(state.floorMutation);
     this.mutationNotice = null;
+    this.specializations=normalizeSpecializations(state.specializations);
+    this.specializationMilestones=Array.isArray(state.specializationMilestones)?state.specializationMilestones.filter(level=>SPECIALIZATION_MILESTONES.includes(level)).slice(0,MAX_SPECIALIZATIONS):[];
+    this.specializationQueue=Array.isArray(state.specializationQueue)?state.specializationQueue.filter(level=>SPECIALIZATION_MILESTONES.includes(level)&&!this.specializationMilestones.includes(level)).slice(0,MAX_SPECIALIZATIONS):[];
+    const candidates=state.pendingSpecialization?.candidates?.filter(id=>specializationById(id));
+    this.pendingSpecialization=Number.isFinite(state.pendingSpecialization?.level)&&candidates?.length?{level:state.pendingSpecialization.level,candidates:[...new Set(candidates)].slice(0,3)}:null;
     this.lastRunResult = null;
     this.rng = new Rng(1); this.rng.state = Number(state.rngState);
     this.feedback = null; this.feedbackId = 0;

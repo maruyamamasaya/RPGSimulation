@@ -12,6 +12,7 @@ import { createRunStats, finishRun, normalizeRunHistory } from '../src/run-recor
 import { displayItemName, EQUIPMENT_TRAITS, traitDescription } from '../src/equipment-traits.js';
 import { EVENT_CHANCE, FLOOR_EVENTS, eventEquipment, rollFloorEvent } from '../src/events.js';
 import { FLOOR_MUTATIONS, rollFloorMutation } from '../src/mutations.js';
+import { buildDropBonus, buildSummary, createSpecializations, MAX_SPECIALIZATIONS, rollSpecializationCandidates, SPECIALIZATION_MILESTONES, specializationCount } from '../src/specializations.js';
 
 function equipTrait(game,definitionId,trait,instanceId=`test-${trait}`) {
   const definition=itemById(definitionId);
@@ -522,4 +523,39 @@ test('mutation combines once with FORTUNE, survives v3 restore, and resets for a
   const fortune=win(null),combined=win({id:'ABUNDANCE',startFloor:10,endFloor:19});assert.ok(Math.abs(combined.lastReward.gold-Math.round(fortune.lastReward.gold*1.25))<=1);
   combined.status='preparation';const restored=new Game({savedState:JSON.parse(JSON.stringify(combined.serialize()))});assert.deepEqual(restored.floorMutation,{id:'ABUNDANCE',startFloor:10,endFloor:19});
   const legacy=combined.serialize();delete legacy.floorMutation;assert.equal(new Game({savedState:legacy}).floorMutation,null);restored.startRun();assert.equal(restored.floorMutation,null);
+});
+
+test('specialization milestones trigger once at levels five, ten, and fifteen', () => {
+  const game=new Game({seed:101});for(const level of SPECIALIZATION_MILESTONES){game.player.level=level-1;game.levelUp();assert.deepEqual(game.specializationQueue,[level]);game.player.level=level-1;game.levelUp();assert.deepEqual(game.specializationQueue,[level]);game.offerNextSpecialization();const choice=game.pendingSpecialization.candidates[0];assert.equal(game.chooseSpecialization(choice),true);}
+  assert.equal(specializationCount(game.specializations),MAX_SPECIALIZATIONS);game.player.level=14;game.levelUp();assert.equal(game.pendingSpecialization,null);
+});
+
+test('specialization candidates are seeded, unique, and only the selected build is acquired', () => {
+  assert.deepEqual(rollSpecializationCandidates(new Rng(202)),rollSpecializationCandidates(new Rng(202)));
+  const candidates=rollSpecializationCandidates(new Rng(203));assert.equal(candidates.length,3);assert.equal(new Set(candidates).size,3);
+  const game=new Game({seed:204});game.pendingSpecialization={level:5,candidates};const selected=candidates[1];assert.equal(game.chooseSpecialization(selected),true);assert.equal(game.specializations[selected],1);for(const id of candidates.filter(id=>id!==selected))assert.equal(game.specializations[id],0);
+});
+
+test('the same specialization stacks while total acquisitions remain capped at three', () => {
+  const game=new Game({seed:205});for(const level of SPECIALIZATION_MILESTONES){game.pendingSpecialization={level,candidates:['OFFENSE','DEFENSE','EXPLORER']};assert.equal(game.chooseSpecialization('OFFENSE'),true);}
+  assert.equal(game.specializations.OFFENSE,3);assert.equal(buildSummary(game.specializations),'猛攻 Lv3');game.pendingSpecialization={level:20,candidates:['OFFENSE']};assert.equal(game.chooseSpecialization('OFFENSE'),false);
+});
+
+test('offense, defense, and last stand affect only their final combat paths', () => {
+  const dealt=(specializations,hp=100)=>{const game=new Game({seed:206,eliteChance:0});game.specializations={...createSpecializations(),...specializations};game.player.hp=hp;game.enemy.hp=99999;game.player.atk=100;game.rng=new Rng(55);game.hitEnemy(1,'攻撃');return game.feedback.amount;};
+  const normal=dealt({}),offense=dealt({OFFENSE:1}),healthy=dealt({LAST_STAND:1}),low=dealt({LAST_STAND:1},30);assert.ok(offense>normal&&Math.abs(offense-normal*1.1)<=1);assert.equal(healthy,normal);assert.ok(low>normal&&Math.abs(low-normal*1.2)<=1);
+  const received=level=>{const game=new Game({seed:207,eliteChance:0});game.specializations={...createSpecializations(),DEFENSE:level};game.player.hp=999;game.player.maxHp=999;game.enemy.intent={id:'strike',name:'攻撃',text:'攻撃した。',telegraph:'攻撃。',multiplier:1};game.rng=new Rng(77);const before=game.player.hp;game.enemyTurn(false);return before-game.player.hp;};assert.equal(received(1),Math.max(1,Math.round(received(0)*.9)));
+  const stacked=level=>{const game=new Game({seed:206,eliteChance:0});equipTrait(game,'leather-armor','LAST_STAND');game.specializations.LAST_STAND=level;game.player.hp=Math.floor(game.player.maxHp*.3);game.enemy.hp=99999;game.player.atk=100;game.rng=new Rng(55);game.hitEnemy(1,'攻撃');return game.feedback.amount;};const equipmentOnly=stacked(0),equipmentAndBuild=stacked(1);assert.ok(equipmentAndBuild>equipmentOnly&&Math.abs(equipmentAndBuild-equipmentOnly*1.2)<=1);
+});
+
+test('explorer and merchant combine once with mutation and equipment bonuses', () => {
+  const build={...createSpecializations(),EXPLORER:1};assert.equal(buildDropBonus(build),.05);assert.ok(Math.abs(buildDropBonus({...build,EXPLORER:3})-.15)<1e-12);
+  const win=({merchant=0,fortune=false,abundance=false}={})=>{const game=new Game({seed:208,eliteChance:0});if(fortune)equipTrait(game,'leather-armor','FORTUNE');game.status='combat';game.specializations={...createSpecializations(),MERCHANT:merchant};game.floorMutation=abundance?{id:'ABUNDANCE'}:null;game.enemy.hp=1;game.player.atk=99999;game.dispatch('attack');return game.lastReward.gold;};
+  const base=win(),merchant=win({merchant:1}),fortune=win({fortune:true}),combined=win({merchant:1,fortune:true,abundance:true});assert.equal(merchant,Math.round(base*1.15));assert.ok(Math.abs(combined-Math.round(fortune*1.15*1.25))<=1);
+  const event=new Game({seed:210});event.specializations.MERCHANT=3;event.floor=10;event.beginEvent('dangerousPath');event.rng.next=()=>.1;event.chooseEvent('safe');assert.equal(event.player.gold,24);
+});
+
+test('build state survives v3 restore, defaults for old saves, and resets on a new run', () => {
+  const game=new Game({seed:209});game.specializations.OFFENSE=2;game.specializations.EXPLORER=1;game.specializationMilestones=[5,10];game.pendingSpecialization={level:15,candidates:['OFFENSE','DEFENSE','MERCHANT']};game.status='preparation';const saved=game.serialize();const restored=new Game({savedState:JSON.parse(JSON.stringify(saved))});assert.deepEqual(restored.specializations,game.specializations);assert.deepEqual(restored.specializationMilestones,[5,10]);assert.deepEqual(restored.specializationQueue,[]);assert.deepEqual(restored.pendingSpecialization,game.pendingSpecialization);
+  const legacy=JSON.parse(JSON.stringify(saved));delete legacy.specializations;delete legacy.specializationMilestones;delete legacy.specializationQueue;delete legacy.pendingSpecialization;const old=new Game({savedState:legacy});assert.deepEqual(old.specializations,createSpecializations());assert.deepEqual(old.specializationMilestones,[]);assert.equal(old.pendingSpecialization,null);restored.startRun();assert.deepEqual(restored.specializations,createSpecializations());
 });
