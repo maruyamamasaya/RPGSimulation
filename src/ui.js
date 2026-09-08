@@ -6,6 +6,7 @@ import { describeBonuses, itemById, RARITY_LABEL, shopItems } from './items.js';
 import { ITEM_KEYS, resolveShortcut } from './keyboard.js';
 import { displayItemName, traitDescription } from './equipment-traits.js';
 import { eventById } from './events.js';
+import { mutationById } from './mutations.js';
 
 const STORAGE_KEY = 'formula-dungeon:meta:v1';
 const SAVE_KEY = 'formula-dungeon:save:v3';
@@ -25,6 +26,7 @@ let lastSaveTime = null;
 let inputLocked = false;
 let selectedItem = null;
 let visibleSelections = [];
+let shownMutationNotice = null;
 
 function saveMeta() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 1, ...game.meta }));
@@ -82,7 +84,10 @@ function render() {
   document.querySelector('[data-action="escape"]').classList.toggle('primary-escape',game.recommendedAction==='escape');
   $('#escape-rate').textContent = `成功率 ${Math.round(escapeChance(p,e,game.observation)*100)}%`;
   const threatHint=p.obs>=18?` / 強敵率 約${Math.round(game.strongEnemyChance*100)}%`:'';
-  $('#run-stats').innerHTML = `<p><span>戦闘ターン</span><b>${game.totalTurns}</b></p><p><span>獲得EXP</span><b>${game.runExp}</b></p><p><span>成長効率</span><b>${game.efficiency}</b></p><p><span>討伐知識</span><b>${game.knowledge}回</b></p><p><span>解析深度</span><b>${game.observation} / 3</b></p><p><span>ダンジョンの気配</span><b>${game.threatLabel}${threatHint}</b></p>`;
+  const mutation=mutationById(game.floorMutation?.id);
+  $('#run-stats').innerHTML = `<p><span>戦闘ターン</span><b>${game.totalTurns}</b></p><p><span>獲得EXP</span><b>${game.runExp}</b></p><p><span>成長効率</span><b>${game.efficiency}</b></p><p><span>討伐知識</span><b>${game.knowledge}回</b></p><p><span>解析深度</span><b>${game.observation} / 3</b></p><p><span>ダンジョンの気配</span><b>${game.threatLabel}${threatHint}</b></p><p><span>階層変異</span><b>${mutation?.name||'なし'}</b></p>`;
+  $('#mutation-menu-info').textContent=mutation?`変異：${mutation.name} — ${mutation.description}`:'変異：なし（1〜9階）';
+  if(game.mutationNotice&&game.mutationNotice!==shownMutationNotice){shownMutationNotice=game.mutationNotice;const notice=$('#mutation-notice');notice.textContent=game.mutationNotice;notice.hidden=false;setTimeout(()=>{notice.hidden=true;},3600);}
   const log = $('#log'); log.replaceChildren(...game.logs.map((entry, i) => { const li=document.createElement('li'); li.textContent=entry; if(i===0) li.className='latest'; return li; }));
   $('#mobile-menu-button').setAttribute('aria-expanded', String(!$('#mobile-menu').hidden));
   $('#gameover').hidden = game.status !== 'gameover';

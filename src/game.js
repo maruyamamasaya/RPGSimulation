@@ -7,6 +7,7 @@ import { mergeMeta, normalizeMeta, recordDefeat, recordEncounter } from './besti
 import { createRunStats, finishRun, normalizeRunStats } from './run-records.js';
 import { equippedTraits, goldRewardMultiplier, normalizeTrait, outgoingDamageMultiplier, displayItemName } from './equipment-traits.js';
 import { createFloorEvent, eventById, eventEquipment, normalizeRunModifiers, rollFloorEvent } from './events.js';
+import { mutationBonus, mutationById, mutationMultiplier, normalizeFloorMutation, rollFloorMutation } from './mutations.js';
 
 export function createPlayer() {
   return { level: 1, maxHp: 100, hp: 100, atk: 12, def: 10, spd: 10, obs: 10, maxSp: 30, sp: 30, exp: 0,
@@ -33,6 +34,8 @@ export class Game {
     this.runStats = createRunStats();
     this.runModifiers = normalizeRunModifiers();
     this.currentEvent = null;
+    this.floorMutation = null;
+    this.mutationNotice = null;
     this.lastRunResult = null;
     this.totalTurns = 0;
     this.totalHpLost = 0;
@@ -48,7 +51,7 @@ export class Game {
   }
 
   spawnEnemy(record = true) {
-    const strongChance=this.eliteChance!==undefined?this.eliteChance:Math.min(CONFIG.strongEnemyChanceCap,CONFIG.strongEnemyChance+this.threat*.000625);
+    const strongChance=this.eliteChance!==undefined?this.eliteChance:Math.min(CONFIG.strongEnemyChanceCap,CONFIG.strongEnemyChance+this.threat*.000625+mutationBonus(this.floorMutation,'ELITE_ZONE',.03));
     this.enemy = createEnemy(this.floor, this.rng, this.eliteChance!==undefined?{eliteChance:this.eliteChance}:{strongChance});
     this.observation = 0;
     this.turn = 1;
@@ -63,7 +66,7 @@ export class Game {
   get disclosure() { return disclosureScore(this.player, this.enemy, this.knowledge, this.observation); }
   get efficiency() { return efficiency(this.runExp, this.totalTurns, this.totalHpLost, this.enemy?.danger || 1); }
   get rewardRate() { return this.sameFloorBattles >= 8 ? .5 : this.sameFloorBattles >= 5 ? .75 : this.sameFloorBattles >= 3 ? .9 : 1; }
-  get strongEnemyChance() { return Math.min(CONFIG.strongEnemyChanceCap,CONFIG.strongEnemyChance+this.threat*.000625); }
+  get strongEnemyChance() { return Math.min(CONFIG.strongEnemyChanceCap,CONFIG.strongEnemyChance+this.threat*.000625+mutationBonus(this.floorMutation,'ELITE_ZONE',.03)); }
   get threatLabel() { return this.threat>=75?'異常':this.threat>=45?'危険':this.threat>=18?'不穏':'安定'; }
   get recommendedAction() { return this.enemy?.rank==='aberrant'?'escape':null; }
 
@@ -94,8 +97,7 @@ export class Game {
       this.hitEnemy(CONFIG.skills.powerStrike.multiplier, CONFIG.skills.powerStrike.name);
     } else if (action === 'firstAid') {
       if (!this.spendSp(CONFIG.skills.firstAid.cost)) return;
-      const healed = Math.min(this.player.maxHp - this.player.hp, Math.round(this.player.maxHp * 0.24 + this.player.obs * 0.4));
-      this.player.hp += healed;
+      const healed = this.healPlayer(Math.round(this.player.maxHp * 0.24 + this.player.obs * 0.4));
       this.addLog(`応急手当でHPを${healed}回復した。`);
     } else if (action === 'focus') {
       if (!this.spendSp(CONFIG.skills.focus.cost)) return;
@@ -159,9 +161,10 @@ export class Game {
     } else if (intent.id === 'charge') {
       this.addLog(`${this.enemy.name}は${intent.text} 次の行動に備えよう。`);
     } else {
-      const raw = intent.ultimate
+      const baseRaw = intent.ultimate
         ? Math.max(1, Math.round(this.player.maxHp * (0.76 + this.rng.next() * 0.08) + this.enemy.atk * 0.28))
         : damage(this.enemy.atk, this.player.def, intent.multiplier, this.rng, 1);
+      const raw=Math.max(1,Math.round(baseRaw*mutationMultiplier(this.floorMutation,'BERSERK',1.15)));
       const dealt = guard ? Math.max(1, Math.round(raw * (1 - CONFIG.guardReduction))) : raw;
       const hpBefore = this.player.hp;
       this.player.hp = Math.max(0, this.player.hp - dealt);
@@ -176,8 +179,8 @@ export class Game {
 
   win() {
     const rankMultiplier=this.enemy.rank==='aberrant'?18:this.enemy.rank==='elite'?10:1;
-    const reward = Math.max(1, Math.round(expReward(18 + this.enemy.level * 8, this.enemy.level, this.player.level, this.enemy.archetype.danger) * this.rewardRate * rankMultiplier));
-    const gold = Math.max(1,Math.round(goldReward(this.enemy.archetype.baseGold, this.enemy.level, this.player.level, this.enemy.archetype.danger, this.rng, this.rewardRate) * rankMultiplier * goldRewardMultiplier(this.player)));
+    const reward = Math.max(1, Math.round(expReward(18 + this.enemy.level * 8, this.enemy.level, this.player.level, this.enemy.archetype.danger) * this.rewardRate * rankMultiplier * mutationMultiplier(this.floorMutation,'TRAINING',1.2)));
+    const gold = Math.max(1,Math.round(goldReward(this.enemy.archetype.baseGold, this.enemy.level, this.player.level, this.enemy.archetype.danger, this.rng, this.rewardRate) * rankMultiplier * goldRewardMultiplier(this.player) * mutationMultiplier(this.floorMutation,'ABUNDANCE',1.25)));
     this.player.exp += reward;
     this.player.gold += gold;
     this.runExp += reward;
@@ -186,7 +189,7 @@ export class Game {
     this.runStats.goldEarned += gold;
     recordDefeat(this.meta, this.enemy.id);
     this.meta.knowledge[this.enemy.id] = this.knowledge + 1;
-    const drop=rollDrop(this.enemy,this.floor,this.rng,++this.itemCounter);
+    const drop=rollDrop(this.enemy,this.floor,this.rng,++this.itemCounter,mutationBonus(this.floorMutation,'TREASURE',.10));
     if(drop){const def=itemById(drop.definitionId);if(def.type==='consumable')this.player.consumables[def.id]=(this.player.consumables[def.id]||0)+1;else{this.player.ownedItems.push(drop);this.player.inventory.push(def.id);this.runStats.equipmentAcquired+=1}this.addLog(`DROP：${displayItemName(def,drop)}（${def.rarity.toUpperCase()}）`)}
     this.updateThreat();
     this.addLog(`${this.enemy.elite?'強敵撃破！ ':'勝利！'}EXP +${reward} / Gold +${gold}（報酬率 ${Math.round(this.rewardRate*100)}%）`);
@@ -213,7 +216,7 @@ export class Game {
   preparationAction(action) {
     this.feedback = null;
     if (action === 'advance') {
-      this.floor += 1; this.sameFloorBattles = 0;
+      this.floor += 1; this.sameFloorBattles = 0;this.updateFloorMutation();
       const eventId=rollFloorEvent(this.rng);
       if(eventId)this.beginEvent(eventId);else{this.status = 'combat';this.spawnEnemy();}
     } else if (action === 'train') {
@@ -260,6 +263,16 @@ export class Game {
     return true;
   }
 
+  updateFloorMutation(){
+    if(this.floor<10){this.floorMutation=null;return null;}
+    const startFloor=Math.floor(this.floor/10)*10;
+    if(this.floorMutation?.startFloor===startFloor)return this.floorMutation;
+    const previousId=this.floorMutation?.id||null,selected=rollFloorMutation(this.rng,previousId);
+    this.floorMutation={id:selected.id,startFloor,endFloor:startFloor+9};
+    this.mutationNotice=`地下${startFloor}〜${startFloor+9}階：階層変異「${selected.name}」が発生した。${selected.description}`;
+    this.addLog(this.mutationNotice);return this.floorMutation;
+  }
+
   beginEvent(id) {
     const event=createFloorEvent(id,this.floor,this.rng);
     if(!event)return false;
@@ -270,7 +283,7 @@ export class Game {
   chooseEvent(choice) {
     if(this.status!=='event'||this.currentEvent?.phase!=='choice')return false;
     const event=this.currentEvent;let result='';
-    const heal=rate=>{const before=this.player.hp,amount=Math.round(this.player.maxHp*rate);this.player.hp=Math.min(this.player.maxHp,this.player.hp+amount);return this.player.hp-before;};
+    const heal=rate=>this.healPlayer(Math.round(this.player.maxHp*rate));
     const damagePlayer=rate=>{const amount=Math.min(Math.max(0,this.player.hp-1),Math.max(1,Math.round(this.player.maxHp*rate)));this.player.hp-=amount;return amount;};
     const grantGold=amount=>{this.player.gold+=amount;this.runStats.goldEarned+=amount;return amount;};
     const grantEquipment=source=>{const owned=eventEquipment(this.floor,this.rng,`item-${++this.itemCounter}`,source);this.player.ownedItems.push(owned);this.player.inventory.push(owned.definitionId);this.runStats.equipmentAcquired+=1;return owned;};
@@ -341,15 +354,17 @@ export class Game {
     this.player.consumables[id] -= 1;
     this.battleMetrics && (this.battleMetrics.itemsUsed += 1);
     const before = this.player.hp;
-    this.player.hp = Math.min(this.player.maxHp, this.player.hp + item.bonuses.heal);
+    this.healPlayer(item.bonuses.heal);
     this.addLog(`${item.name}を使った。HP ${before} → ${this.player.hp}`);
     return true;
   }
 
+  healPlayer(amount){const before=this.player.hp,adjusted=Math.max(0,Math.round(amount*mutationMultiplier(this.floorMutation,'DEPLETION',.7)));this.player.hp=Math.min(this.player.maxHp,this.player.hp+adjusted);return this.player.hp-before;}
+
   serialize() {
     return JSON.parse(JSON.stringify({ version:3, floor:this.floor, player:this.player, enemy:this.enemy, status:this.status,
       turn:this.turn, observation:this.observation, runExp:this.runExp, totalTurns:this.totalTurns, totalHpLost:this.totalHpLost,
-      sameFloorBattles:this.sameFloorBattles, lastReward:this.lastReward, runStats:this.runStats, runModifiers:this.runModifiers, currentEvent:this.currentEvent, logs:this.logs, meta:this.meta, rngState:this.rng.state, threat:this.threat, itemCounter:this.itemCounter }));
+      sameFloorBattles:this.sameFloorBattles, lastReward:this.lastReward, runStats:this.runStats, runModifiers:this.runModifiers, currentEvent:this.currentEvent, floorMutation:this.floorMutation, logs:this.logs, meta:this.meta, rngState:this.rng.state, threat:this.threat, itemCounter:this.itemCounter }));
   }
 
   restore(state) {
@@ -359,6 +374,8 @@ export class Game {
     this.runStats = normalizeRunStats(state.runStats);
     this.runModifiers = normalizeRunModifiers(state.runModifiers);
     this.currentEvent = state.currentEvent || null;
+    this.floorMutation = normalizeFloorMutation(state.floorMutation);
+    this.mutationNotice = null;
     this.lastRunResult = null;
     this.rng = new Rng(1); this.rng.state = Number(state.rngState);
     this.feedback = null; this.feedbackId = 0;

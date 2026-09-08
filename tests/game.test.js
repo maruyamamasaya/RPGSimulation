@@ -11,6 +11,7 @@ import { bestiaryEntries } from '../src/bestiary.js';
 import { createRunStats, finishRun, normalizeRunHistory } from '../src/run-records.js';
 import { displayItemName, EQUIPMENT_TRAITS, traitDescription } from '../src/equipment-traits.js';
 import { EVENT_CHANCE, FLOOR_EVENTS, eventEquipment, rollFloorEvent } from '../src/events.js';
+import { FLOOR_MUTATIONS, rollFloorMutation } from '../src/mutations.js';
 
 function equipTrait(game,definitionId,trait,instanceId=`test-${trait}`) {
   const definition=itemById(definitionId);
@@ -473,4 +474,52 @@ test('run modifiers survive v3 saves, default for old saves, and reset on a new 
   const restored=new Game({savedState:JSON.parse(JSON.stringify(saved))});assert.deepEqual(restored.runModifiers,{atk:.05,def:0});assert.equal(restored.player.atk,game.player.atk);
   const legacy=JSON.parse(JSON.stringify(saved));delete legacy.runModifiers;const old=new Game({savedState:legacy});assert.deepEqual(old.runModifiers,{atk:0,def:0});
   restored.startRun();assert.deepEqual(restored.runModifiers,{atk:0,def:0});
+});
+
+test('floor mutations start at floor ten, are seeded, singular, and never repeat consecutively', () => {
+  const sequence=seed=>{const rng=new Rng(seed);let previous=null;return Array.from({length:20},()=>{const next=rollFloorMutation(rng,previous);previous=next.id;return next.id;});};
+  const first=sequence(501);assert.deepEqual(first,sequence(501));assert.equal(FLOOR_MUTATIONS.length,6);for(let i=1;i<first.length;i++)assert.notEqual(first[i],first[i-1]);
+  const game=new Game({seed:9});game.floor=9;game.updateFloorMutation();assert.equal(game.floorMutation,null);game.floor=10;game.updateFloorMutation();assert.equal(Object.keys(game.floorMutation).filter(key=>key==='id').length,1);assert.equal(game.floorMutation.startFloor,10);assert.equal(game.floorMutation.endFloor,19);
+});
+
+test('berserk mutation increases enemy damage only while active', () => {
+  const strike=mutation=>{const game=new Game({seed:25,eliteChance:0});game.floorMutation=mutation;game.player.hp=999;game.player.maxHp=999;game.enemy=createEnemy(10,new Rng(31),{archetype:ENEMIES[0],rank:'normal'});game.enemy.intent={id:'strike',name:'攻撃',text:'攻撃した。',telegraph:'攻撃。',multiplier:1};game.rng=new Rng(88);const before=game.player.hp;game.enemyTurn(false);return before-game.player.hp;};
+  const normal=strike(null),berserk=strike({id:'BERSERK'});assert.equal(berserk,Math.round(normal*1.15));
+  assert.equal(strike({id:'ABUNDANCE'}),normal);
+});
+
+test('abundance and training modify combat rewards without changing event rewards', () => {
+  const win=mutation=>{const game=new Game({seed:71,eliteChance:0});game.floorMutation=mutation;game.enemy.hp=1;game.player.atk=99999;game.dispatch('attack');return game.lastReward;};
+  const normal=win(null),abundance=win({id:'ABUNDANCE'}),training=win({id:'TRAINING'});
+  assert.equal(abundance.gold,Math.round(normal.gold*1.25));assert.equal(abundance.exp,normal.exp);assert.equal(training.exp,Math.round(normal.exp*1.2));assert.equal(training.gold,normal.gold);
+  const event=new Game({seed:73});event.floorMutation={id:'ABUNDANCE'};event.floor=10;event.beginEvent('dangerousPath');event.rng.next=()=>.1;event.chooseEvent('safe');assert.equal(event.player.gold,24);
+});
+
+test('treasure mutation adds ten percentage points without changing trait generation', () => {
+  const enemy=createEnemy(15,new Rng(8),{archetype:ENEMIES[0],rank:'normal'});
+  const rate=bonus=>{let drops=0;for(let seed=1;seed<=10000;seed++)if(rollDrop(enemy,15,new Rng(seed),seed,bonus))drops++;return drops/10000;};
+  const base=rate(0),treasure=rate(.10);assert.ok(treasure>base+.09&&treasure<base+.11);
+  const reward=Array.from({length:200},(_,seed)=>rollDrop(enemy,15,new Rng(seed+1),seed,.10)).find(item=>item?.trait);assert.ok(reward?.trait);assert.equal(Boolean(EQUIPMENT_TRAITS[reward.trait]),true);
+});
+
+test('depletion consistently reduces skill, item, and fountain healing', () => {
+  const direct=new Game({seed:3});direct.player.hp=20;direct.floorMutation={id:'DEPLETION'};assert.equal(direct.healPlayer(30),21);
+  direct.player.consumables.herb=1;direct.status='preparation';const before=direct.player.hp;direct.useConsumable('herb');assert.equal(direct.player.hp-before,Math.round(itemById('herb').bonuses.heal*.7));
+  const fountain=new Game({seed:4});fountain.player.hp=20;fountain.floorMutation={id:'DEPLETION'};fountain.beginEvent('fountain');fountain.chooseEvent('drink');assert.equal(fountain.player.hp,20+Math.round(fountain.player.maxHp*.25*.7));
+});
+
+test('elite zone adds to existing Threat chance and still respects the cap', () => {
+  const game=new Game({seed:5});game.threat=32;const base=game.strongEnemyChance;game.floorMutation={id:'ELITE_ZONE'};assert.equal(game.strongEnemyChance,base+.03);game.threat=1000;assert.equal(game.strongEnemyChance,CONFIG.strongEnemyChanceCap);
+});
+
+test('switching mutation removes the previous effect and events can still occur at a boundary', () => {
+  const game=new Game({seed:6});game.floor=19;game.floorMutation={id:'BERSERK',startFloor:10,endFloor:19};game.status='preparation';let values=[0,.1,0];game.rng.next=()=>values.shift()??.9;game.dispatch('advance');
+  assert.equal(game.floor,20);assert.notEqual(game.floorMutation.id,'BERSERK');assert.equal(game.status,'event');assert.ok(game.currentEvent);
+});
+
+test('mutation combines once with FORTUNE, survives v3 restore, and resets for a new run', () => {
+  const win=mutation=>{const game=new Game({seed:81,eliteChance:0});equipTrait(game,'leather-armor','FORTUNE');game.status='combat';game.floorMutation=mutation;game.enemy.hp=1;game.player.atk=99999;game.dispatch('attack');return game;};
+  const fortune=win(null),combined=win({id:'ABUNDANCE',startFloor:10,endFloor:19});assert.ok(Math.abs(combined.lastReward.gold-Math.round(fortune.lastReward.gold*1.25))<=1);
+  combined.status='preparation';const restored=new Game({savedState:JSON.parse(JSON.stringify(combined.serialize()))});assert.deepEqual(restored.floorMutation,{id:'ABUNDANCE',startFloor:10,endFloor:19});
+  const legacy=combined.serialize();delete legacy.floorMutation;assert.equal(new Game({savedState:legacy}).floorMutation,null);restored.startRun();assert.equal(restored.floorMutation,null);
 });

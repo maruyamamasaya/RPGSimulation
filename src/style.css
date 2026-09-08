@@ -30,6 +30,8 @@ h1 { margin:0; font-size:clamp(25px,3.5vw,40px); letter-spacing:.08em; }
 .utility-nav button { cursor:pointer; white-space:nowrap; color:var(--text); background:#132925; border:1px solid var(--line); border-radius:var(--radius); padding:8px 14px; }
 .utility-nav button:hover { border-color:var(--mint); background:#193b34; }
 .mobile-menu-button { display:none; }
+.mutation-notice { position:fixed; z-index:7; top:16px; left:50%; width:min(560px,calc(100% - 24px)); transform:translateX(-50%); padding:12px 16px; color:var(--text); background:#3b2d12; border:1px solid var(--gold); border-radius:var(--radius); text-align:center; font-size:12px; box-shadow:0 12px 40px #000; }
+.mutation-menu-info { padding:9px; color:var(--gold)!important; background:var(--panel-deep); border:1px solid var(--line); border-radius:5px; font-size:11px; }
 .battle-grid { display:grid; grid-template-columns:250px minmax(0,1fr) 220px; grid-template-areas:"player encounter run"; gap:var(--space-2); margin:18px 0 12px; align-items:stretch; }
 .player-card { grid-area:player; }
 .encounter { grid-area:encounter; }
@@ -301,6 +303,7 @@ h1 { margin:0; font-size:clamp(25px,3.5vw,40px); letter-spacing:.08em; }
   .modal { padding:max(8px,env(safe-area-inset-top)) 8px max(8px,env(safe-area-inset-bottom)); }
   .modal>div { max-height:calc(100dvh - max(16px,env(safe-area-inset-top)) - max(16px,env(safe-area-inset-bottom))); }
   .mobile-menu>div { width:100%; }
+  .mutation-notice { top:max(8px,env(safe-area-inset-top)); padding:9px 11px; font-size:10px; }
 }
 @media (pointer:coarse) { kbd,.keyboard-help { display:none; } }
 @media (prefers-reduced-motion:reduce) { * { transition:none!important; animation-duration:.01ms!important; } }
