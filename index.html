@@ -11,7 +11,7 @@
   <main class="shell">
     <header class="topbar">
       <div><p class="eyebrow">INFINITE FORMULA DUNGEON</p><h1>深層演算域</h1></div>
-      <div class="depth"><span>現在深度</span><strong id="floor">地下 1階</strong><small id="best">最高 1階</small></div>
+      <div class="topbar-actions"><button data-view="bestiary">敵図鑑</button><div class="depth"><span>現在深度</span><strong id="floor">地下 1階</strong><small id="best">最高 1階</small></div></div>
     </header>
     <section class="battle-grid" aria-live="polite">
       <article class="card player-card"><div class="card-title"><span>探索者</span><strong id="player-level">LV.1</strong></div><div id="player-stats"></div></article>
@@ -53,9 +53,10 @@
     <section class="log-panel"><div class="log-heading"><h2>戦闘ログ</h2><span>最新の出来事が上</span></div><ol id="log"></ol></section>
     <section id="shop" class="modal" hidden><div class="shop-window"><p class="eyebrow">FLOOR SHOP</p><h2>迷宮商店</h2><p id="shop-gold"></p><div id="shop-items" class="shop-list"></div><h3>所持装備</h3><div id="inventory" class="shop-list"></div><button data-action="closeShop">準備へ戻る</button></div></section>
     <section id="items-modal" class="modal" hidden><div class="shop-window"><p class="eyebrow">INVENTORY</p><h2 id="items-title">所持アイテム</h2><div id="items-list" class="shop-list"></div><button data-view="close">準備へ戻る</button></div></section>
+    <section id="bestiary-modal" class="modal" hidden><div class="shop-window bestiary-window"><p class="eyebrow">ENEMY ARCHIVE</p><h2>敵図鑑</h2><p id="bestiary-progress"></p><div id="bestiary-list" class="bestiary-list"></div><button data-view="close-bestiary">ゲームへ戻る</button></div></section>
     <section id="selection-dialog" class="modal selection-dialog" hidden><div><p class="eyebrow">SELECTION</p><h2 id="selection-name"></h2><p id="selection-detail"></p><div id="selection-actions"></div><button data-select-action="cancel"><kbd>X</kbd> 戻る</button></div></section>
     <section id="title-screen" class="modal"><div><p class="eyebrow">INFINITE FORMULA DUNGEON</p><h2>深層演算域</h2><button data-system="new">はじめから</button><button id="continue-button" data-system="continue">続きから</button></div></section>
-    <section id="gameover" class="modal" hidden><div><p class="eyebrow">EXPEDITION FAILED</p><h2>探索終了</h2><p id="gameover-copy"></p><button data-action="restart">新しい探索を始める</button></div></section>
+    <section id="gameover" class="modal" hidden><div class="result-window"><p class="eyebrow">EXPEDITION FAILED</p><h2>探索終了</h2><p id="gameover-copy"></p><div id="run-result" class="result-grid"></div><h3>直近のラン</h3><ol id="run-history" class="run-history"></ol><button data-action="restart">新しい探索を始める</button></div></section>
     <aside id="keyboard-help" class="keyboard-help" aria-live="polite"><b>キーボード操作</b><span id="keyboard-help-copy"></span></aside>
   </main>
   <script type="module" src="src/ui.js"></script>

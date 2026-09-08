@@ -1,8 +1,10 @@
 import { Game } from './game.js';
 import { telegraphText } from './enemies.js';
+import { bestiaryEntries } from './bestiary.js';
 import { escapeChance, expToNext } from './formulas.js';
 import { describeBonuses, itemById, RARITY_LABEL, shopItems } from './items.js';
 import { ITEM_KEYS, resolveShortcut } from './keyboard.js';
+import { displayItemName, traitDescription } from './equipment-traits.js';
 
 const STORAGE_KEY = 'formula-dungeon:meta:v1';
 const SAVE_KEY = 'formula-dungeon:save:v3';
@@ -16,7 +18,7 @@ function loadMeta() {
   return { version: 1, bestFloor: 1, knowledge: {} };
 }
 
-let game = new Game({ meta: loadMeta() });
+let game = new Game({ meta: loadMeta(), recordInitialEncounter:false });
 const $ = (selector) => document.querySelector(selector);
 let lastSaveTime = null;
 let inputLocked = false;
@@ -45,7 +47,7 @@ function estimate(label, value, score) {
 function bonus(stat) { return game.player[stat] - game.player.baseStats[stat]; }
 function statDetail(stat) { const value=bonus(stat); return value ? ` <small>（基礎${game.player.baseStats[stat]} ${value>0?'+':''}${value}）</small>` : ''; }
 function ownedByInstance(id) { return game.player.ownedItems.find(item=>item.instanceId===id); }
-function equippedName(slot) { return itemById(ownedByInstance(game.player.equipment[slot])?.definitionId)?.name || 'なし'; }
+function equippedName(slot) { const owned=ownedByInstance(game.player.equipment[slot]);const item=itemById(owned?.definitionId);return item?displayItemName(item,owned):'なし'; }
 
 function render() {
   const p = game.player;
@@ -77,7 +79,7 @@ function render() {
   $('#run-stats').innerHTML = `<p><span>戦闘ターン</span><b>${game.totalTurns}</b></p><p><span>獲得EXP</span><b>${game.runExp}</b></p><p><span>成長効率</span><b>${game.efficiency}</b></p><p><span>討伐知識</span><b>${game.knowledge}回</b></p><p><span>解析深度</span><b>${game.observation} / 3</b></p><p><span>ダンジョンの気配</span><b>${game.threatLabel}${threatHint}</b></p>`;
   const log = $('#log'); log.replaceChildren(...game.logs.map((entry, i) => { const li=document.createElement('li'); li.textContent=entry; if(i===0) li.className='latest'; return li; }));
   $('#gameover').hidden = game.status !== 'gameover';
-  $('#gameover-copy').textContent = `地下${game.floor}階まで到達。ラン獲得EXP ${game.runExp}、成長効率 ${game.efficiency}。ログを読み返し、次の判断へつなげよう。`;
+  if (game.status === 'gameover') renderGameover();
   $('#actions').hidden = game.status !== 'combat';
   $('#skills').hidden = game.status !== 'combat' || $('#skills').hidden;
   $('#preparation').hidden = game.status !== 'preparation';
@@ -92,7 +94,7 @@ function render() {
 function renderPreparation() {
   const reward=game.lastReward;
   const drop=reward?.drop?itemById(reward.drop.definitionId):null;
-  $('#reward-summary').innerHTML = reward ? `${reward.rank&&reward.rank!=='normal'?'強敵撃破！<br>':''}EXP +${reward.exp} / Gold +${reward.gold}${drop?`<br><span class="rarity-${drop.rarity}">DROP：${drop.name}［${RARITY_LABEL[drop.rarity]} / ${drop.rarity.toUpperCase()}］ ${describeBonuses(reward.drop.rolledStats)}</span>`:''}` : '探索を再開しました。';
+  $('#reward-summary').innerHTML = reward ? `${reward.rank&&reward.rank!=='normal'?'強敵撃破！<br>':''}EXP +${reward.exp} / Gold +${reward.gold}${drop?`<br><span class="rarity-${drop.rarity}">DROP：${displayItemName(drop,reward.drop)}［${RARITY_LABEL[drop.rarity]} / ${drop.rarity.toUpperCase()}］ ${describeBonuses(reward.drop.rolledStats)}${reward.drop.trait?` / ${traitDescription(reward.drop.trait)}`:''}</span>`:''}` : '探索を再開しました。';
   $('#prep-status').textContent = `地下${game.floor}階　HP ${game.player.hp} / ${game.player.maxHp}　Gold ${game.player.gold} G　気配：${game.threatLabel}`;
   const nextBattles=game.sameFloorBattles+1;
   const nextRate=nextBattles>=8?.5:nextBattles>=5?.75:nextBattles>=3?.9:1;
@@ -103,10 +105,10 @@ function renderPreparation() {
 
 function itemCard(item, owned=null, shortcut=null, selectionIndex=null) {
   const equipped=owned&&Object.values(game.player.equipment).includes(owned.instanceId);
-  const action=owned?`equip:${owned.instanceId}`:`buy:${item.id}`;
+  const action=owned?`${equipped?'unequip':'equip'}:${owned.instanceId}`:`buy:${item.id}`;
   const isNew=game.player.newShopItems.includes(item.id);
   const selector=!owned&&selectionIndex!==null?`data-select-index="${selectionIndex}"`:`data-action="${action}"`;
-  return `<article class="rarity-card rarity-${item.rarity}"><div><b>${shortcut?`<kbd>${shortcut.toUpperCase()}</kbd> `:''}${item.name}</b>${isNew?'<em>NEW</em>':''}<small>${item.type} / ${RARITY_LABEL[item.rarity]} / ${item.rarity.toUpperCase()} / Lv.${item.recommendedLevel}目安</small><p>${describeBonuses(owned?.rolledStats||item.baseStats)}</p><small>所持 ${owned?1:game.player.inventory.filter(id=>id===item.id).length}</small></div><button ${selector} ${equipped?'disabled':''}>${equipped?'装備中':owned?'装備する':'選択'}</button></article>`;
+  return `<article class="rarity-card rarity-${item.rarity}"><div><b>${shortcut?`<kbd>${shortcut.toUpperCase()}</kbd> `:''}${displayItemName(item,owned)}</b>${isNew?'<em>NEW</em>':''}<small>${item.type} / ${RARITY_LABEL[item.rarity]} / ${item.rarity.toUpperCase()} / Lv.${item.recommendedLevel}目安</small><p>${describeBonuses(owned?.rolledStats||item.baseStats)}${owned?.trait?` / <span class="trait-effect">${traitDescription(owned.trait)}</span>`:''}</p><small>所持 ${owned?1:game.player.inventory.filter(id=>id===item.id).length}</small></div><button ${selector}>${equipped?'外す':owned?'装備する':'選択'}</button></article>`;
 }
 
 function renderShop() {
@@ -125,8 +127,39 @@ function renderItems(mode='items') {
   $('#items-modal').hidden=false;
 }
 
+function renderGameover() {
+  const result=game.lastRunResult;
+  if(!result)return;
+  const labels={highestFloor:'最高到達階層',maxKills:'最多撃破数',maxStrongKills:'最多強敵撃破数',maxGoldEarned:'最多Gold獲得',maxDamage:'最大与ダメージ'};
+  const record=key=>result.newRecords.includes(key)?`<small class="new-record">${labels[key]} NEW RECORD</small>`:'';
+  $('#gameover-copy').textContent = `地下${result.floor}階で探索終了。今回の記録を次の挑戦へつなげよう。`;
+  $('#run-result').innerHTML = `
+    <div><span>到達階層</span><b>${result.floor}</b>${record('highestFloor')}</div>
+    <div><span>撃破した敵</span><b>${result.kills}</b>${record('maxKills')}</div>
+    <div><span>強敵撃破</span><b>${result.strongKills}</b>${record('maxStrongKills')}</div>
+    <div><span>獲得Gold</span><b>${result.goldEarned}</b>${record('maxGoldEarned')}</div>
+    <div><span>獲得装備</span><b>${result.equipmentAcquired}</b></div>
+    <div><span>最大与ダメージ</span><b>${result.maxDamage}</b>${record('maxDamage')}</div>
+    <div><span>総ターン数</span><b>${result.totalTurns}</b></div>
+    <div><span>最終レベル</span><b>LV.${result.finalLevel}</b></div>
+    <div><span>最終所持Gold</span><b>${result.finalGold} G</b></div>`;
+  $('#run-history').innerHTML=game.meta.runHistory.map(entry=>`<li><time>${new Date(entry.endedAt).toLocaleString()}</time><span>地下${entry.floor}階 / 撃破${entry.kills} / 強敵${entry.strongKills} / ${entry.goldEarned} G / LV.${entry.finalLevel}</span></li>`).join('');
+}
+
+function renderBestiary() {
+  const entries = bestiaryEntries(game.meta);
+  const encountered = entries.filter(entry => entry.encountered).length;
+  $('#bestiary-progress').textContent = `発見 ${encountered} / ${entries.length}`;
+  $('#bestiary-list').innerHTML = entries.map(entry => entry.encountered ? `
+    <article class="bestiary-card"><h3>${entry.name}</h3><p>遭遇済み</p><dl><div><dt>遭遇</dt><dd>${entry.encounters}回</dd></div><div><dt>撃破</dt><dd>${entry.defeats}回</dd></div><div><dt>初回</dt><dd>${entry.firstFloor ? `地下${entry.firstFloor}階` : '記録なし'}</dd></div><div><dt>最深</dt><dd>${entry.deepestFloor ? `地下${entry.deepestFloor}階` : '記録なし'}</dd></div></dl></article>` : `
+    <article class="bestiary-card unknown"><h3>？？？</h3><p>未遭遇</p></article>`).join('');
+  $('#bestiary-modal').hidden = false;
+  renderKeyboardHelp();
+}
+
 function currentScreen() {
   if(!$('#selection-dialog').hidden)return 'selection';
+  if(!$('#bestiary-modal').hidden)return 'bestiary';
   if(!$('#title-screen').hidden||!$('#gameover').hidden)return 'none';
   if(!$('#items-modal').hidden)return 'inventory';
   if(game.status==='shop')return 'shop';
@@ -135,16 +168,17 @@ function currentScreen() {
 }
 
 function renderKeyboardHelp() {
-  const text={combat:'A 攻撃　D 防御　O 観察　S スキル　R 逃走',skills:'Q 演算強打　W 応急手当　E 集中解析　X 戻る',preparation:'N 次階層　T 鍛錬　P ショップ　E 装備　I アイテム　V セーブ',shop:'Q〜N 商品選択　X 戻る',inventory:'Q〜N 対象選択　X 戻る',selection:'B 購入 / E 装備 / U 使用　X 戻る'};
+  const text={combat:'A 攻撃　D 防御　O 観察　S スキル　R 逃走',skills:'Q 演算強打　W 応急手当　E 集中解析　X 戻る',preparation:'N 次階層　T 鍛錬　P ショップ　E 装備　I アイテム　V セーブ',shop:'Q〜N 商品選択　X 戻る',inventory:'Q〜N 対象選択　X 戻る',selection:'B 購入 / E 装備 / U 使用　X 戻る',bestiary:'図鑑を閉じるとゲームへ戻ります'};
   $('#keyboard-help-copy').textContent=text[currentScreen()]||'ボタンを選択してください';
 }
 
 function showSelection(entry) {
   if(!entry)return;
   selectedItem=entry; const item=entry.item;
-  $('#selection-name').textContent=item.name;
-  $('#selection-detail').textContent=`${describeBonuses(entry.owned?.rolledStats||item.baseStats)}${entry.kind==='shop'?` / 価格 ${item.price} G`:''}`;
-  $('#selection-actions').innerHTML=entry.kind==='shop'?'<button data-select-action="buy"><kbd>B</kbd> 購入する</button>':entry.kind==='consumable'?'<button data-select-action="use"><kbd>U</kbd> 使用する</button>':'<button data-select-action="equip"><kbd>E</kbd> 装備する</button>';
+  $('#selection-name').textContent=displayItemName(item,entry.owned);
+  $('#selection-detail').textContent=`${describeBonuses(entry.owned?.rolledStats||item.baseStats)}${entry.owned?.trait?` / ${traitDescription(entry.owned.trait)}`:''}${entry.kind==='shop'?` / 価格 ${item.price} G`:''}`;
+  const equipped=entry.owned&&Object.values(game.player.equipment).includes(entry.owned.instanceId);
+  $('#selection-actions').innerHTML=entry.kind==='shop'?'<button data-select-action="buy"><kbd>B</kbd> 購入する</button>':entry.kind==='consumable'?'<button data-select-action="use"><kbd>U</kbd> 使用する</button>':`<button data-select-action="equip"><kbd>E</kbd> ${equipped?'外す':'装備する'}</button>`;
   $('#selection-dialog').hidden=false; renderKeyboardHelp();
 }
 
@@ -172,7 +206,8 @@ function confirmSelection(command) {
   if(!selectedItem)return false;
   const allowed=(command==='confirmBuy'&&selectedItem.kind==='shop')||(command==='use'&&selectedItem.kind==='consumable')||(command==='equip'&&selectedItem.kind==='owned');
   if(!allowed)return false;
-  const action=command==='confirmBuy'?`buy:${selectedItem.item.id}`:command==='use'?`use:${selectedItem.item.id}`:`equip:${selectedItem.owned.instanceId}`;
+  const equipped=selectedItem.owned&&Object.values(game.player.equipment).includes(selectedItem.owned.instanceId);
+  const action=command==='confirmBuy'?`buy:${selectedItem.item.id}`:command==='use'?`use:${selectedItem.item.id}`:`${equipped?'unequip':'equip'}:${selectedItem.owned.instanceId}`;
   closeSelection(); return performGameAction(action);
 }
 
@@ -204,9 +239,15 @@ document.addEventListener('click', (event) => {
   if(button.dataset.selectIndex!==undefined){showSelection(visibleSelections[Number(button.dataset.selectIndex)]);return;}
   if(button.dataset.selectAction){const map={buy:'confirmBuy',use:'use',equip:'equip',cancel:'cancelSelection'};handleCommand(map[button.dataset.selectAction]);return;}
   if(button.dataset.keyAction){handleCommand(button.dataset.keyAction);return;}
-  if (button.dataset.view) { if(button.dataset.view==='close'){$('#items-modal').hidden=true;renderKeyboardHelp();} else renderItems(button.dataset.view); return; }
+  if (button.dataset.view) {
+    if(button.dataset.view==='close') $('#items-modal').hidden=true;
+    else if(button.dataset.view==='bestiary') renderBestiary();
+    else if(button.dataset.view==='close-bestiary') $('#bestiary-modal').hidden=true;
+    else renderItems(button.dataset.view);
+    renderKeyboardHelp(); return;
+  }
   if (button.dataset.system === 'new') { game=new Game({meta:loadMeta()}); $('#title-screen').hidden=true; render(); return; }
-  if (button.dataset.system === 'continue') { const save=readSave(); if(save){ game=new Game({savedState:save}); lastSaveTime=save.savedAt ? new Date(save.savedAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : null; $('#title-screen').hidden=true; render(); } return; }
+  if (button.dataset.system === 'continue') { const save=readSave(); if(save){ game=new Game({savedState:save,meta:loadMeta()}); lastSaveTime=save.savedAt ? new Date(save.savedAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : null; $('#title-screen').hidden=true; render(); } return; }
   if (button.dataset.system === 'save') { saveGame(); return; }
   if (button.id === 'skill-toggle') { $('#skills').hidden = !$('#skills').hidden; renderKeyboardHelp(); return; }
   if (button.dataset.action) { const inventoryOpen=!$('#items-modal').hidden; performGameAction(button.dataset.action); if(inventoryOpen&&button.dataset.action==='usePotion')renderItems('items'); }

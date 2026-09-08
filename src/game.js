@@ -3,6 +3,9 @@ import { advanceIntent, createEnemy, currentIntent, telegraphText } from './enem
 import { damage, disclosureScore, efficiency, escapeChance, expReward, expToNext, goldReward, growPlayer } from './formulas.js';
 import { Rng } from './rng.js';
 import { createOwnedItem, initialShopProgress, itemById, rollDrop, shopItems } from './items.js';
+import { mergeMeta, normalizeMeta, recordDefeat, recordEncounter } from './bestiary.js';
+import { createRunStats, finishRun, normalizeRunStats } from './run-records.js';
+import { equippedTraits, goldRewardMultiplier, normalizeTrait, outgoingDamageMultiplier, displayItemName } from './equipment-traits.js';
 
 export function createPlayer() {
   return { level: 1, maxHp: 100, hp: 100, atk: 12, def: 10, spd: 10, obs: 10, maxSp: 30, sp: 30, exp: 0,
@@ -10,20 +13,24 @@ export function createPlayer() {
 }
 
 export class Game {
-  constructor({ seed = Date.now(), meta = {}, eliteChance, savedState } = {}) {
+  constructor({ seed = Date.now(), meta = {}, eliteChance, savedState, recordInitialEncounter = true, now = () => Date.now() } = {}) {
     this.rng = new Rng(seed);
     this.eliteChance = eliteChance;
-    this.meta = { bestFloor: Math.max(1, Number(meta.bestFloor) || 1), knowledge: { ...(meta.knowledge || {}) } };
-    if (savedState) this.restore(savedState); else this.startRun();
+    this.now = now;
+    const persistentMeta = normalizeMeta(meta);
+    if (savedState) { this.restore(savedState); this.meta = mergeMeta(this.meta, persistentMeta); }
+    else { this.meta = persistentMeta; this.startRun(recordInitialEncounter); }
   }
 
-  startRun() {
+  startRun(recordInitialEncounter = true) {
     this.floor = 1;
     this.player = createPlayer();
     this.status = 'combat';
     this.turn = 1;
     this.observation = 0;
     this.runExp = 0;
+    this.runStats = createRunStats();
+    this.lastRunResult = null;
     this.totalTurns = 0;
     this.totalHpLost = 0;
     this.sameFloorBattles = 0;
@@ -34,10 +41,10 @@ export class Game {
     this.logs = ['演算灯を掲げ、終わりのない地下迷宮へ足を踏み入れた。'];
     this.feedback = null;
     this.feedbackId = 0;
-    this.spawnEnemy();
+    this.spawnEnemy(recordInitialEncounter);
   }
 
-  spawnEnemy() {
+  spawnEnemy(record = true) {
     const strongChance=this.eliteChance!==undefined?this.eliteChance:Math.min(CONFIG.strongEnemyChanceCap,CONFIG.strongEnemyChance+this.threat*.000625);
     this.enemy = createEnemy(this.floor, this.rng, this.eliteChance!==undefined?{eliteChance:this.eliteChance}:{strongChance});
     this.observation = 0;
@@ -46,6 +53,7 @@ export class Game {
     this.logs.unshift(this.enemy.rank==='aberrant' ? '【危険個体】空間が歪んでいる。逃走は正しい判断だ。' : this.enemy.elite ? '【強敵】異質な気配を感じる――戦う必要はない。' : `${this.enemy.name}が道を塞いだ。`);
     this.logs.unshift(`予兆：${telegraphText(this.enemy)}`);
     this.meta.bestFloor = Math.max(this.meta.bestFloor, this.floor);
+    if (record) recordEncounter(this.meta, this.enemy.id, this.floor);
   }
 
   get knowledge() { return this.meta.knowledge[this.enemy.id] || 0; }
@@ -113,6 +121,7 @@ export class Game {
       this.player.hp = 0;
       this.status = 'gameover';
       this.addLog(`HPが尽きた。地下${this.floor}階で探索を終えた。敗因は直前の「${this.lastEnemyAction}」。`);
+      this.lastRunResult = finishRun(this.meta,this.runStats,{floor:this.floor,totalTurns:this.totalTurns,finalLevel:this.player.level,finalGold:this.player.gold,endedAt:this.now()});
       return;
     }
     this.turn += 1;
@@ -127,8 +136,9 @@ export class Game {
 
   hitEnemy(multiplier, label) {
     const reduction = this.enemy.guarded ? 0.48 : 1;
-    const dealt = damage(this.player.atk, this.enemy.def, multiplier, this.rng, reduction);
+    const dealt = damage(this.player.atk, this.enemy.def, multiplier, this.rng, reduction*outgoingDamageMultiplier(this.player,this.enemy));
     this.enemy.hp = Math.max(0, this.enemy.hp - dealt);
+    this.runStats.maxDamage = Math.max(this.runStats.maxDamage,dealt);
     this.addLog(`${label}で${dealt}ダメージ。${this.enemy.guarded ? '敵の防御に阻まれた。' : ''}`);
     this.feedback = { target: 'enemy', type: this.enemy.guarded ? 'block' : 'damage', amount: dealt, nonce: ++this.feedbackId };
     this.enemy.guarded = false;
@@ -163,13 +173,17 @@ export class Game {
   win() {
     const rankMultiplier=this.enemy.rank==='aberrant'?18:this.enemy.rank==='elite'?10:1;
     const reward = Math.max(1, Math.round(expReward(18 + this.enemy.level * 8, this.enemy.level, this.player.level, this.enemy.archetype.danger) * this.rewardRate * rankMultiplier));
-    const gold = goldReward(this.enemy.archetype.baseGold, this.enemy.level, this.player.level, this.enemy.archetype.danger, this.rng, this.rewardRate) * rankMultiplier;
+    const gold = Math.max(1,Math.round(goldReward(this.enemy.archetype.baseGold, this.enemy.level, this.player.level, this.enemy.archetype.danger, this.rng, this.rewardRate) * rankMultiplier * goldRewardMultiplier(this.player)));
     this.player.exp += reward;
     this.player.gold += gold;
     this.runExp += reward;
+    this.runStats.kills += 1;
+    if(this.enemy.elite)this.runStats.strongKills += 1;
+    this.runStats.goldEarned += gold;
+    recordDefeat(this.meta, this.enemy.id);
     this.meta.knowledge[this.enemy.id] = this.knowledge + 1;
     const drop=rollDrop(this.enemy,this.floor,this.rng,++this.itemCounter);
-    if(drop){const def=itemById(drop.definitionId);if(def.type==='consumable')this.player.consumables[def.id]=(this.player.consumables[def.id]||0)+1;else{this.player.ownedItems.push(drop);this.player.inventory.push(def.id)}this.addLog(`DROP：${def.name}（${def.rarity.toUpperCase()}）`)}
+    if(drop){const def=itemById(drop.definitionId);if(def.type==='consumable')this.player.consumables[def.id]=(this.player.consumables[def.id]||0)+1;else{this.player.ownedItems.push(drop);this.player.inventory.push(def.id);this.runStats.equipmentAcquired+=1}this.addLog(`DROP：${displayItemName(def,drop)}（${def.rarity.toUpperCase()}）`)}
     this.updateThreat();
     this.addLog(`${this.enemy.elite?'強敵撃破！ ':'勝利！'}EXP +${reward} / Gold +${gold}（報酬率 ${Math.round(this.rewardRate*100)}%）`);
     this.lastReward = { exp:reward, gold, rate:this.rewardRate, drop, rank:this.enemy.rank };
@@ -201,6 +215,8 @@ export class Game {
     } else if (action === 'openShop') this.status = 'shop';
     else if (action === 'usePotion') this.useConsumable();
     else if (action.startsWith('use:')) this.useConsumable(action.slice(4));
+    else if (action.startsWith('equip:')) this.equip(action.slice(6));
+    else if (action.startsWith('unequip:')) this.unequip(action.slice(8));
   }
 
   shopAction(action) {
@@ -208,6 +224,7 @@ export class Game {
     const [verb, id] = action.split(':');
     if (verb === 'buy') this.buy(id);
     else if (verb === 'equip') this.equip(id);
+    else if (verb === 'unequip') this.unequip(id);
   }
 
   buy(id) {
@@ -217,7 +234,7 @@ export class Game {
     if (this.player.gold < item.price) { this.addLog('Goldが足りない。'); return false; }
     this.player.gold -= item.price;
     if (item.type === 'consumable') this.player.consumables[id] = (this.player.consumables[id] || 0) + 1;
-    else { const owned=createOwnedItem(item,this.rng,{instanceId:id,source:'shop',rolled:false}); this.player.ownedItems.push(owned); this.player.inventory.push(id); }
+    else { const owned=createOwnedItem(item,this.rng,{instanceId:id,source:'shop',rolled:false}); this.player.ownedItems.push(owned); this.player.inventory.push(id); this.runStats.equipmentAcquired+=1; }
     const previous=this.player.shopProgress[item.seriesId]||0;
     this.player.shopProgress[item.seriesId]=Math.max(previous,item.tier);
     this.player.newShopItems=shopItems(this.floor,this.player.shopProgress).filter(x=>x.seriesId===item.seriesId&&x.tier===item.tier+1).map(x=>x.id);
@@ -237,6 +254,16 @@ export class Game {
     return true;
   }
 
+  unequip(id) {
+    if (this.status !== 'shop' && this.status !== 'preparation') return false;
+    const slot=Object.keys(this.player.equipment).find(key=>this.player.equipment[key]===id);
+    if(!slot)return false;
+    this.player.equipment[slot]=null;
+    this.recalculateEquipment();
+    this.addLog('装備を外した。');
+    return true;
+  }
+
   recalculateEquipment() {
     const previousMax = this.player.maxHp;
     for (const stat of ['maxHp','atk','def','spd','obs']) this.player[stat] = this.player.baseStats[stat];
@@ -245,6 +272,10 @@ export class Game {
       if (!owned) continue;
       for (const [stat,value] of Object.entries(owned.rolledStats)) if (stat in this.player) this.player[stat] += value;
     }
+    const traits=equippedTraits(this.player);
+    if(traits.has('MIGHT'))this.player.atk=Math.round(this.player.atk*1.1);
+    if(traits.has('GUARD'))this.player.def=Math.round(this.player.def*1.1);
+    if(traits.has('VITAL'))this.player.maxHp=Math.round(this.player.maxHp*1.1);
     this.player.hp = Math.min(this.player.maxHp, Math.max(0, this.player.hp + Math.max(0, this.player.maxHp - previousMax)));
   }
 
@@ -263,16 +294,20 @@ export class Game {
   serialize() {
     return JSON.parse(JSON.stringify({ version:3, floor:this.floor, player:this.player, enemy:this.enemy, status:this.status,
       turn:this.turn, observation:this.observation, runExp:this.runExp, totalTurns:this.totalTurns, totalHpLost:this.totalHpLost,
-      sameFloorBattles:this.sameFloorBattles, lastReward:this.lastReward, logs:this.logs, meta:this.meta, rngState:this.rng.state, threat:this.threat, itemCounter:this.itemCounter }));
+      sameFloorBattles:this.sameFloorBattles, lastReward:this.lastReward, runStats:this.runStats, logs:this.logs, meta:this.meta, rngState:this.rng.state, threat:this.threat, itemCounter:this.itemCounter }));
   }
 
   restore(state) {
     if (![2,3].includes(state?.version) || !state.player || state.status !== 'preparation') throw new Error('Invalid save data');
     Object.assign(this, state);
+    this.meta = normalizeMeta(state.meta);
+    this.runStats = normalizeRunStats(state.runStats);
+    this.lastRunResult = null;
     this.rng = new Rng(1); this.rng.state = Number(state.rngState);
     this.feedback = null; this.feedbackId = 0;
     this.player.baseStats ||= { maxHp:this.player.maxHp, atk:this.player.atk, def:this.player.def, spd:this.player.spd, obs:this.player.obs };
     this.player.ownedItems ||= (this.player.inventory||[]).map((id,index)=>createOwnedItem(itemById(id),this.rng,{instanceId:`legacy-${index+1}`,source:'shop',rolled:false}));
+    for(const owned of this.player.ownedItems)owned.trait=normalizeTrait(owned.trait);
     this.player.shopProgress ||= initialShopProgress(); this.player.newShopItems ||= []; this.threat ||= 0; this.itemCounter ||= this.player.ownedItems.length;
     for(const slot of ['weapon','armor']){const old=this.player.equipment[slot];if(old&&!this.player.ownedItems.some(x=>x.instanceId===old)){this.player.equipment[slot]=this.player.ownedItems.find(x=>x.definitionId===old)?.instanceId||null}}
     this.recalculateEquipment();
