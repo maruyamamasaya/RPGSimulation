@@ -57,6 +57,8 @@ function render() {
   const p = game.player;
   const e = game.enemy;
   const score = game.disclosure;
+  const isCombat = game.status === 'combat';
+  document.body.classList.toggle('mobile-combat', isCombat);
   $('#floor').textContent = `地下 ${game.floor}階`;
   $('#best').textContent = `最高 ${game.meta.bestFloor}階`;
   $('#header-level').textContent = p.level;
@@ -95,8 +97,8 @@ function render() {
   $('#mobile-menu-button').setAttribute('aria-expanded', String(!$('#mobile-menu').hidden));
   $('#gameover').hidden = game.status !== 'gameover';
   if (game.status === 'gameover') renderGameover();
-  $('#actions').hidden = game.status !== 'combat';
-  $('#skills').hidden = game.status !== 'combat' || $('#skills').hidden;
+  $('#actions').hidden = !isCombat;
+  $('#skills').hidden = !isCombat || $('#skills').hidden;
   $('#preparation').hidden = game.status !== 'preparation';
   $('#event-panel').hidden = game.status !== 'event';
   $('#specialization-modal').hidden = !game.pendingSpecialization;
