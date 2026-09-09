@@ -2,7 +2,7 @@
 
 ## Boundaries and data
 
-本MVPは認証・認可・外部通信・秘密情報を持ちません。保存対象は最高階と敵討伐数のみで、個人情報を収集しません。
+本MVPは認証・認可・秘密情報を持ちません。Sentry Error Monitoringのため、ブラウザで発生したJavaScriptエラーと診断に必要な技術情報をSentryへ送信します。ゲームの保存データは端末内に保持し、意図的に個人情報を収集しません。
 
 ## Input and output
 
@@ -10,7 +10,7 @@
 
 ## Dependencies
 
-実行時・開発時とも外部依存を持たず、ブラウザとNode.js標準機能のみを使います。将来依存を追加する際はlockfile、脆弱性確認、最小権限を導入します。
+アプリ本体はブラウザとNode.js標準機能だけを使い、Error Monitoring用のSentry Browser JavaScript LoaderをCDNから読み込みます。Tracing、Session Replay、Loggingは組み込みません。Sentry以外の依存を追加する際はlockfile、脆弱性確認、最小権限を導入します。
 
 ## Retention
 

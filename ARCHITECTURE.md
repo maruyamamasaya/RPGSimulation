@@ -2,11 +2,12 @@
 
 ## System Overview
 
-依存ライブラリやバックエンドを持たない、ES Modules製の静的Webアプリです。純粋なドメインロジックを表示層から分離します。
+バックエンドを持たない、ES Modules製の静的Webアプリです。純粋なドメインロジックを表示層から分離し、実行時のJavaScriptエラー監視だけをSentryへ委ねます。
 
 ## Technology Stack
 
 - HTML5 / CSS3 / JavaScript (ES2022 modules)
+- Sentry Browser JavaScript Loader（Error Monitoringのみ）
 - Node.js標準test runner（ロジックテストのみ）
 - `localStorage`（端末内のメタ進行保存）
 
@@ -48,7 +49,7 @@ UI入力 → `Game.dispatch(action)` → 状態遷移とログ生成 → snapsho
 
 ## External Services / Deployment
 
-外部サービスはありません。任意の静的ホスティング、またはローカルHTTP serverで配信できます。
+任意の静的ホスティング、またはローカルHTTP serverで配信できます。本番では`index.html`の`<head>`からSentry Browser JavaScript Loaderを先に読み込み、アプリのJavaScriptエラーをSentryへ送信します。Tracing、Session Replay、Loggingは使用しません。
 
 ## Key Constraints
 
