@@ -9,6 +9,7 @@ import { eventById } from './events.js';
 import { mutationById } from './mutations.js';
 import { buildSummary, specializationById } from './specializations.js';
 import { affinityKnowledge, damageTypeById, effectiveStat, statusById, statusList } from './combat-effects.js';
+import { CONFIG } from './config.js';
 
 const STORAGE_KEY = 'formula-dungeon:meta:v1';
 const SAVE_KEY = 'formula-dungeon:save:v3';
@@ -82,9 +83,10 @@ function render() {
   $('#affinity-readout').textContent=`弱点 ${known.weaknesses===null?'不明':names(known.weaknesses)} / 耐性 ${known.resistances===null?'不明':names(known.resistances)}`;
   $('#combat-statuses').textContent=`敵：${statusText(e)}　探索者：${statusText(p)}`;
   $('#telegraph').textContent = telegraphText(e);
-  const intent=currentIntent(e),dangerousIntent=intent.ultimate||intent.id==='charge';
-  $('#telegraph-panel').classList.toggle('danger',dangerousIntent);
-  $('#telegraph-label').textContent=dangerousIntent?'危険：次の敵行動':'次の敵行動';
+  const intent=currentIntent(e),ultimateIncoming=Boolean(intent.ultimate),ultimateCharging=intent.id==='charge';
+  $('#telegraph-panel').classList.toggle('danger',ultimateIncoming);
+  $('#telegraph-panel').classList.toggle('warning',ultimateCharging);
+  $('#telegraph-label').textContent=ultimateIncoming?'危険：大技発動、防御を推奨':ultimateCharging?'警戒：大技の準備を開始':'次の敵行動';
   $('#trait').textContent = score >= .55 ? `${e.archetype.trait}。弱点：${score >= .78 ? e.archetype.weakness : 'さらに観察が必要'}` : '動きの意図はまだ読み切れない。観察すれば判明する。';
   $('#elite-alert').hidden = !e.elite;
   $('#elite-alert').className = `elite-alert ${e.rank || 'normal'}`;
@@ -92,6 +94,14 @@ function render() {
   $('#enemy-name').className = e.rank || 'normal';
   document.querySelector('[data-action="escape"]').classList.toggle('primary-escape',game.recommendedAction==='escape');
   $('#escape-rate').textContent = `成功率 ${Math.round(escapeChance({...p,spd:effectiveStat(p,'spd')},{...e,spd:effectiveStat(e,'spd')},game.observation)*100)}%`;
+  $('#skill-toggle-sp').textContent=`SP ${p.sp} / ${p.maxSp}`;
+  $('#skills-sp').textContent=`SP ${p.sp} / ${p.maxSp}`;
+  for(const [action,skill] of Object.entries(CONFIG.skills)){
+    const button=document.querySelector(`[data-action="${action}"]`);
+    const unavailable=p.sp<skill.cost;
+    button.disabled=unavailable;
+    button.querySelector('small').textContent=`SP ${skill.cost}${unavailable?'（不足）':''} / ${action==='powerStrike'?'打撃・破防':action==='firstAid'?'HP回復':'解析+2'}`;
+  }
   const threatHint=p.obs>=18?` / 強敵率 約${Math.round(game.strongEnemyChance*100)}%`:'';
   const mutation=mutationById(game.floorMutation?.id);
   const build=buildSummary(game.specializations);
@@ -105,6 +115,7 @@ function render() {
   if (game.status === 'gameover') renderGameover();
   $('#actions').hidden = !isCombat;
   $('#skills').hidden = !isCombat || $('#skills').hidden;
+  $('#skill-toggle').setAttribute('aria-expanded',String(isCombat&&!$('#skills').hidden));
   $('#preparation').hidden = game.status !== 'preparation';
   $('#event-panel').hidden = game.status !== 'event';
   $('#specialization-modal').hidden = !game.pendingSpecialization;
@@ -244,6 +255,12 @@ function showSelection(entry) {
 
 function closeSelection(){selectedItem=null;$('#selection-dialog').hidden=true;renderKeyboardHelp();}
 
+function setSkillsOpen(open){
+  $('#skills').hidden=!open;
+  $('#skill-toggle').setAttribute('aria-expanded',String(open));
+  renderKeyboardHelp();
+}
+
 function performGameAction(action) {
   if(inputLocked)return false;
   const combat=game.status==='combat'&&['attack','guard','observe','powerStrike','firstAid','focus','escape'].includes(action);
@@ -252,8 +269,8 @@ function performGameAction(action) {
 }
 
 function handleCommand(command) {
-  if(command==='skills'){if(game.status==='combat'){$('#skills').hidden=false;renderKeyboardHelp();}return true;}
-  if(command==='closeSkills'){$('#skills').hidden=true;renderKeyboardHelp();return true;}
+  if(command==='skills'){if(game.status==='combat')setSkillsOpen(true);return true;}
+  if(command==='closeSkills'){setSkillsOpen(false);return true;}
   if(command==='items'||command==='equipment'){renderItems(command);renderKeyboardHelp();return true;}
   if(command==='closeInventory'){$('#items-modal').hidden=true;renderKeyboardHelp();return true;}
   if(command==='save'){saveGame();return true;}
@@ -318,7 +335,7 @@ document.addEventListener('click', (event) => {
   if (button.dataset.system === 'continue') { const save=readSave(); if(save){ game=new Game({savedState:save,meta:loadMeta()}); lastSaveTime=save.savedAt ? new Date(save.savedAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : null; $('#title-screen').hidden=true; render(); } return; }
   if (button.dataset.system === 'save') { closeMobileMenu(); saveGame(); return; }
   if (button.dataset.system === 'reload') { location.reload(); return; }
-  if (button.id === 'skill-toggle') { $('#skills').hidden = !$('#skills').hidden; renderKeyboardHelp(); return; }
+  if (button.id === 'skill-toggle') { setSkillsOpen($('#skills').hidden); return; }
   if (button.dataset.action) { const inventoryOpen=!$('#items-modal').hidden; performGameAction(button.dataset.action); if(inventoryOpen&&button.dataset.action==='usePotion')renderItems('items'); }
 });
 

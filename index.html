@@ -44,13 +44,14 @@
       <button data-action="attack"><kbd>A</kbd><b>攻撃</b><small>SP +3</small></button>
       <button data-action="guard"><kbd>D</kbd><b>防御</b><small>被害 -65% / SP +5</small></button>
       <button data-action="observe"><kbd>O</kbd><b>観察</b><small>情報を一段階解析</small></button>
-      <button id="skill-toggle"><kbd>S</kbd><b>スキル</b><small>SPを消費</small></button>
+      <button id="skill-toggle" aria-controls="skills" aria-expanded="false"><kbd>S</kbd><b>スキル</b><small id="skill-toggle-sp">SPを消費</small></button>
       <button data-action="escape" class="escape"><kbd>R</kbd><b>逃走</b><small id="escape-rate">成功率 --%</small></button>
     </section>
-    <section id="skills" class="skills" hidden>
-      <button data-action="powerStrike"><kbd>Q</kbd> 演算強打 <small>SP 8 / 打撃・破防</small></button>
-      <button data-action="firstAid"><kbd>W</kbd> 応急手当 <small>SP 12 / HP回復</small></button>
-      <button data-action="focus"><kbd>E</kbd> 集中解析 <small>SP 7 / 解析+2</small></button>
+    <section id="skills" class="skills" aria-label="スキル選択" hidden>
+      <div class="skills-heading"><span>スキル選択</span><strong id="skills-sp">SP 0 / 0</strong></div>
+      <button data-action="powerStrike"><kbd>Q</kbd><b>演算強打</b><small>SP 8 / 打撃・破防</small></button>
+      <button data-action="firstAid"><kbd>W</kbd><b>応急手当</b><small>SP 12 / HP回復</small></button>
+      <button data-action="focus"><kbd>E</kbd><b>集中解析</b><small>SP 7 / 解析+2</small></button>
       <button data-key-action="closeSkills"><kbd>X</kbd> 戻る</button>
     </section>
     <section id="preparation" class="prep-panel" hidden>
