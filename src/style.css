@@ -29,6 +29,12 @@ h1 { margin:0; font-size:clamp(25px,3.5vw,40px); letter-spacing:.08em; }
 .depth strong { font-size:18px; }
 .utility-nav button { cursor:pointer; white-space:nowrap; color:var(--text); background:#132925; border:1px solid var(--line); border-radius:var(--radius); padding:8px 14px; }
 .utility-nav button:hover { border-color:var(--mint); background:#193b34; }
+.utility-nav { display:flex; align-items:stretch; gap:8px; }
+.theme-picker { display:flex; align-items:center; gap:7px; padding:5px 8px; color:var(--muted); background:rgba(8,19,16,.72); border:1px solid var(--line); border-radius:var(--radius); font-size:9px; letter-spacing:.08em; }
+.theme-picker select { min-height:32px; color:var(--text); background:var(--panel-deep); border:1px solid var(--line); border-radius:5px; padding:4px 7px; font:inherit; }
+.theme-picker select:focus-visible { outline:2px solid var(--mint); outline-offset:2px; }
+.mobile-theme-picker { display:none; margin:0 0 12px; justify-content:space-between; font-size:11px; }
+.title-theme-picker { width:100%; margin:18px 0 6px; justify-content:space-between; font-size:11px; }
 .mobile-menu-button { display:none; }
 .mutation-notice { position:fixed; z-index:7; top:16px; left:50%; width:min(560px,calc(100% - 24px)); transform:translateX(-50%); padding:12px 16px; color:var(--text); background:#3b2d12; border:1px solid var(--gold); border-radius:var(--radius); text-align:center; font-size:12px; box-shadow:0 12px 40px #000; }
 .mutation-menu-info { padding:9px; color:var(--gold)!important; background:var(--panel-deep); border:1px solid var(--line); border-radius:5px; font-size:11px; }
@@ -251,6 +257,7 @@ h1 { margin:0; font-size:clamp(25px,3.5vw,40px); letter-spacing:.08em; }
   .result-grid { grid-template-columns:1fr 1fr; }
   .run-history li { display:grid; gap:3px; }
   .keyboard-help { display:none; }
+  .mobile-theme-picker { display:flex; }
 
   body:has(#event-panel:not([hidden])) { height:100dvh; min-height:0; overflow:hidden; }
   body:has(#event-panel:not([hidden])) .shell { width:100%; height:100dvh; padding:max(8px,env(safe-area-inset-top)) 8px max(8px,env(safe-area-inset-bottom)); display:grid; grid-template-rows:auto minmax(0,1fr); gap:8px; }
@@ -335,3 +342,43 @@ h1 { margin:0; font-size:clamp(25px,3.5vw,40px); letter-spacing:.08em; }
 }
 @media (pointer:coarse) { kbd,.keyboard-help { display:none; } }
 @media (prefers-reduced-motion:reduce) { * { transition:none!important; animation-duration:.01ms!important; } }
+
+/* Aurora beta: isolated behind data-theme so the existing presentation remains the default. */
+.aurora-background { display:none; }
+html[data-theme="aurora"] {
+  --bg:#07080d; --panel:#0f121c; --panel-deep:#090b12; --line:rgba(221,232,255,.12);
+  --mint:#8cecff; --gold:#e0c8ff; --text:#f4f6ff; --muted:#aab2c8; --sp:#719dff;
+  --aurora-cyan:94,238,255; --aurora-blue:74,112,255; --aurora-violet:142,91,255;
+  --aurora-magenta:226,80,211; --aurora-pink:255,122,194; --aurora-intensity:1;
+}
+html[data-theme="aurora"] body { background:linear-gradient(145deg,#07080d,#090b12 52%,#0b0d15); }
+html[data-theme="aurora"] body[data-aurora-state="combat"] { --aurora-intensity:1.08; }
+html[data-theme="aurora"] body[data-aurora-state="important"] { --aurora-intensity:1.18; --aurora-violet:178,99,255; --aurora-magenta:246,87,211; }
+html[data-theme="aurora"] body::before { opacity:.07; background-image:linear-gradient(rgba(140,236,255,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(140,236,255,.07) 1px,transparent 1px); }
+html[data-theme="aurora"] .aurora-background { display:block; position:fixed; z-index:0; inset:-15vmax; overflow:hidden; pointer-events:none; }
+html[data-theme="aurora"] .shell { position:relative; z-index:1; }
+.aurora-light { position:absolute; width:44vmax; height:34vmax; border-radius:50%; opacity:calc(.09 * var(--aurora-intensity)); filter:blur(120px); will-change:transform,opacity; }
+.aurora-light-1 { left:4%; top:3%; background:rgb(var(--aurora-violet)); animation:aurora-drift-a 17s ease-in-out -6s infinite alternate; }
+.aurora-light-2 { right:5%; top:10%; width:38vmax; background:rgb(var(--aurora-cyan)); opacity:calc(.08 * var(--aurora-intensity)); filter:blur(105px); animation:aurora-drift-b 23s ease-in-out -13s infinite alternate; }
+.aurora-light-3 { left:34%; bottom:2%; background:rgb(var(--aurora-blue)); opacity:calc(.07 * var(--aurora-intensity)); filter:blur(150px); animation:aurora-drift-c 29s ease-in-out -9s infinite alternate; }
+.aurora-light-4 { right:13%; bottom:18%; width:32vmax; background:rgb(var(--aurora-magenta)); opacity:calc(.065 * var(--aurora-intensity)); filter:blur(135px); animation:aurora-drift-a 31s ease-in-out -21s infinite alternate-reverse; }
+.aurora-light-5 { left:18%; top:36%; width:28vmax; background:rgb(var(--aurora-pink)); opacity:calc(.045 * var(--aurora-intensity)); filter:blur(90px); animation:aurora-drift-b 37s ease-in-out -17s infinite alternate-reverse; }
+.aurora-sparkle { position:absolute; color:rgba(226,241,255,.65); opacity:0; text-shadow:0 0 9px rgba(140,236,255,.7); animation:aurora-sparkle 13s ease-in-out infinite; }
+.sparkle-1 { left:20%; top:25%; animation-delay:-2s; }.sparkle-2 { left:73%; top:18%; animation-delay:-9s; }.sparkle-3 { left:82%; top:67%; animation-delay:-5s; }.sparkle-4 { left:36%; top:78%; animation-delay:-12s; }
+html[data-theme="aurora"] :is(.card,.encounter,.log-panel,.prep-panel,.event-panel,.modal>div,.session-summary) { position:relative; isolation:isolate; background:linear-gradient(145deg,rgba(20,23,37,.68),rgba(8,10,18,.58)); border-color:rgba(255,255,255,.10); box-shadow:inset 0 1px rgba(255,255,255,.12),0 20px 55px rgba(0,0,0,.34),0 0 24px rgba(var(--aurora-violet),.035); backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px); transition:border-color .22s,box-shadow .22s,transform .16s; }
+html[data-theme="aurora"] :is(.card,.encounter,.log-panel,.prep-panel,.event-panel,.modal>div,.session-summary)::after { content:""; position:absolute; z-index:-1; inset:0; border-radius:inherit; pointer-events:none; opacity:0; background:radial-gradient(260px circle at var(--spot-x,50%) var(--spot-y,50%),rgba(var(--aurora-cyan),.10),transparent 68%); transition:opacity .22s; }
+html[data-theme="aurora"] :is(.card,.encounter,.log-panel,.prep-panel,.event-panel,.modal>div,.session-summary):hover::after { opacity:1; }
+html[data-theme="aurora"] :is(.card,.encounter,.prep-panel,.event-panel,.modal>div):hover { border-color:rgba(140,236,255,.20); box-shadow:inset 0 1px rgba(255,255,255,.14),0 20px 55px rgba(0,0,0,.36),0 0 28px rgba(var(--aurora-violet),.07); }
+html[data-theme="aurora"] :is(.actions,.skills,.prep-actions,.event-choices,.specialization-choices) button { background:rgba(17,21,34,.72); border-color:rgba(140,236,255,.15); transition:transform .16s,border-color .22s,background .22s,box-shadow .22s; }
+html[data-theme="aurora"] :is(.actions,.skills,.prep-actions,.event-choices,.specialization-choices) button:hover { background:rgba(27,31,49,.84); border-color:rgba(140,236,255,.38); box-shadow:0 0 18px rgba(var(--aurora-cyan),.08); }
+html[data-theme="aurora"] :is(.actions,.skills,.prep-actions,.event-choices,.specialization-choices) button:active { transform:translateY(1px) scale(.99); transition-duration:.12s; }
+html[data-theme="aurora"] .modal { background:rgba(4,5,10,.78); backdrop-filter:blur(8px); }
+html[data-theme="aurora"] .keyboard-help,html[data-theme="aurora"] body.mobile-combat .actions,html[data-theme="aurora"] body.mobile-combat .skills { background:rgba(8,10,18,.88); }
+@keyframes aurora-drift-a { from{transform:translate3d(-3%,-2%,0) scale(.94)} to{transform:translate3d(9%,7%,0) scale(1.08)} }
+@keyframes aurora-drift-b { from{transform:translate3d(6%,-5%,0) scale(1.06)} to{transform:translate3d(-8%,9%,0) scale(.91)} }
+@keyframes aurora-drift-c { 0%{transform:translate3d(-5%,5%,0) scale(.96)} 45%{transform:translate3d(8%,-4%,0) scale(1.09)} 100%{transform:translate3d(2%,8%,0) scale(1.01)} }
+@keyframes aurora-sparkle { 0%,72%,100%{opacity:0;transform:scale(.7)} 78%{opacity:.22} 82%{opacity:.7;transform:scale(1)} 88%{opacity:0;transform:scale(.8)} }
+@media (prefers-reduced-motion:reduce) {
+  html[data-theme="aurora"] .aurora-light { animation:none!important; }
+  html[data-theme="aurora"] .aurora-sparkle { display:none; }
+}

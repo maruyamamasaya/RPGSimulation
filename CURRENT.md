@@ -12,6 +12,7 @@ MVP playable / local browser release
 
 - 静的ファイルのみでPC・スマートフォンからプレイ可能
 - Sentry Browser JavaScript Loaderによる本番JavaScriptエラー監視
+- Defaultと、低速の光・Glass・控えめなSpotlightを備えた保存可能な「Aurora β」表示テーマ
 - ダメージ、EXP、成長、生成、開示、戦闘遷移の自動テスト
 - `localStorage`による最高到達階層、討伐知識、v3形式のラン保存とv2からの移行
 - 装備、個体性能付き装備ドロップ、報酬、系列成長ショップ、所持品、鍛錬

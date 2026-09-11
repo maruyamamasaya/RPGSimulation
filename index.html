@@ -13,6 +13,10 @@
   <link rel="stylesheet" href="src/style.css">
 </head>
 <body>
+  <div class="aurora-background" aria-hidden="true">
+    <i class="aurora-light aurora-light-1"></i><i class="aurora-light aurora-light-2"></i><i class="aurora-light aurora-light-3"></i><i class="aurora-light aurora-light-4"></i><i class="aurora-light aurora-light-5"></i>
+    <span class="aurora-sparkle sparkle-1">✦</span><span class="aurora-sparkle sparkle-2">•</span><span class="aurora-sparkle sparkle-3">✦</span><span class="aurora-sparkle sparkle-4">•</span>
+  </div>
   <main class="shell">
     <header class="topbar">
       <div class="brand"><p class="eyebrow">INFINITE FORMULA DUNGEON</p><h1>深層演算域</h1></div>
@@ -23,7 +27,7 @@
           <div><span>GOLD</span><strong id="header-gold">0 G</strong></div>
           <div><span>THREAT</span><strong id="header-threat">安定</strong></div>
         </div>
-        <nav class="utility-nav" aria-label="補助機能"><button data-view="bestiary">敵図鑑</button></nav>
+        <nav class="utility-nav" aria-label="補助機能"><label class="theme-picker"><span>テーマ</span><select data-theme-picker aria-label="ビジュアルテーマ"><option value="default">Default</option><option value="aurora">Aurora β</option></select></label><button data-view="bestiary">敵図鑑</button></nav>
         <button id="mobile-menu-button" class="mobile-menu-button" data-view="menu" aria-haspopup="dialog" aria-controls="mobile-menu">メニュー</button>
       </div>
     </header>
@@ -73,11 +77,11 @@
     <section id="shop" class="modal" hidden><div class="shop-window"><p class="eyebrow">FLOOR SHOP</p><h2>迷宮商店</h2><p id="shop-gold"></p><div id="shop-items" class="shop-list"></div><h3>所持装備</h3><div id="inventory" class="shop-list"></div><button data-action="closeShop">準備へ戻る</button></div></section>
     <section id="items-modal" class="modal" hidden><div class="shop-window"><p class="eyebrow">INVENTORY</p><h2 id="items-title">所持アイテム</h2><div id="items-list" class="shop-list"></div><button data-view="close">準備へ戻る</button></div></section>
     <section id="bestiary-modal" class="modal" hidden><div class="shop-window bestiary-window"><p class="eyebrow">ENEMY ARCHIVE</p><h2>敵図鑑</h2><p id="bestiary-progress"></p><div id="bestiary-list" class="bestiary-list"></div><button data-view="close-bestiary">ゲームへ戻る</button></div></section>
-    <section id="mobile-menu" class="modal mobile-menu" hidden><div><p class="eyebrow">GAME MENU</p><h2>メニュー</h2><p id="mutation-menu-info" class="mutation-menu-info"></p><p id="build-menu-info" class="mutation-menu-info"></p><div class="menu-grid"><button data-view="items">所持品</button><button data-view="equipment">装備</button><button data-view="bestiary">敵図鑑</button><button data-view="records">ラン記録</button><button data-view="log">戦闘ログ</button><button data-system="save">セーブ</button><button data-system="reload">更新</button></div><p class="version-info">Infinite Formula Dungeon v1.0.0</p><button data-view="close-menu">ゲームへ戻る</button></div></section>
+    <section id="mobile-menu" class="modal mobile-menu" hidden><div><p class="eyebrow">GAME MENU</p><h2>メニュー</h2><label class="theme-picker mobile-theme-picker"><span>ビジュアルテーマ</span><select data-theme-picker aria-label="ビジュアルテーマ"><option value="default">Default</option><option value="aurora">Aurora β</option></select></label><p id="mutation-menu-info" class="mutation-menu-info"></p><p id="build-menu-info" class="mutation-menu-info"></p><div class="menu-grid"><button data-view="items">所持品</button><button data-view="equipment">装備</button><button data-view="bestiary">敵図鑑</button><button data-view="records">ラン記録</button><button data-view="log">戦闘ログ</button><button data-system="save">セーブ</button><button data-system="reload">更新</button></div><p class="version-info">Infinite Formula Dungeon v1.0.0</p><button data-view="close-menu">ゲームへ戻る</button></div></section>
     <section id="records-modal" class="modal" hidden><div class="result-window"><p class="eyebrow">RUN RECORDS</p><h2>ラン記録</h2><div id="best-records" class="result-grid"></div><h3>直近のラン</h3><ol id="records-history" class="run-history"></ol><button data-view="close-records">ゲームへ戻る</button></div></section>
     <section id="log-modal" class="modal" hidden><div class="shop-window"><p class="eyebrow">BATTLE LOG</p><h2>戦闘ログ</h2><ol id="full-log"></ol><button data-view="close-log">ゲームへ戻る</button></div></section>
     <section id="selection-dialog" class="modal selection-dialog" hidden><div><p class="eyebrow">SELECTION</p><h2 id="selection-name"></h2><p id="selection-detail"></p><div id="selection-actions"></div><button data-select-action="cancel"><kbd>X</kbd> 戻る</button></div></section>
-    <section id="title-screen" class="modal"><div><p class="eyebrow">INFINITE FORMULA DUNGEON</p><h2>深層演算域</h2><button data-system="new">はじめから</button><button id="continue-button" data-system="continue">続きから</button></div></section>
+    <section id="title-screen" class="modal"><div><p class="eyebrow">INFINITE FORMULA DUNGEON</p><h2>深層演算域</h2><label class="theme-picker title-theme-picker"><span>ビジュアルテーマ</span><select data-theme-picker aria-label="ビジュアルテーマ"><option value="default">Default</option><option value="aurora">Aurora β</option></select></label><button data-system="new">はじめから</button><button id="continue-button" data-system="continue">続きから</button></div></section>
     <section id="gameover" class="modal" hidden><div class="result-window"><p class="eyebrow">EXPEDITION FAILED</p><h2>探索終了</h2><p id="gameover-copy"></p><div id="run-result" class="result-grid"></div><h3>直近のラン</h3><ol id="run-history" class="run-history"></ol><button data-action="restart">新しい探索を始める</button></div></section>
     <aside id="keyboard-help" class="keyboard-help" aria-live="polite"><b>キーボード操作</b><span id="keyboard-help-copy"></span></aside>
   </main>

@@ -14,6 +14,22 @@ import { CONFIG } from './config.js';
 const STORAGE_KEY = 'formula-dungeon:meta:v1';
 const SAVE_KEY = 'formula-dungeon:save:v3';
 const OLD_SAVE_KEY = 'formula-dungeon:save:v2';
+const THEME_KEY = 'formula-dungeon:theme:v1';
+const THEMES = new Set(['default', 'aurora']);
+
+function readTheme() {
+  try { const theme=localStorage.getItem(THEME_KEY); return THEMES.has(theme) ? theme : 'default'; }
+  catch { return 'default'; }
+}
+
+function applyTheme(theme, persist=false) {
+  const selected=THEMES.has(theme) ? theme : 'default';
+  document.documentElement.dataset.theme=selected;
+  document.querySelectorAll('[data-theme-picker]').forEach(picker=>{picker.value=selected;});
+  if(persist) try { localStorage.setItem(THEME_KEY,selected); } catch { /* The visual choice still applies when storage is unavailable. */ }
+}
+
+applyTheme(readTheme());
 
 function loadMeta() {
   try {
@@ -62,6 +78,7 @@ function render() {
   const e = game.enemy;
   const score = game.disclosure;
   const isCombat = game.status === 'combat';
+  document.body.dataset.auroraState = game.status === 'event' || game.pendingSpecialization ? 'important' : isCombat ? 'combat' : 'normal';
   document.body.classList.toggle('mobile-combat', isCombat);
   $('#floor').textContent = `地下 ${game.floor}階`;
   $('#best').textContent = `最高 ${game.meta.bestFloor}階`;
@@ -338,6 +355,19 @@ document.addEventListener('click', (event) => {
   if (button.id === 'skill-toggle') { setSkillsOpen($('#skills').hidden); return; }
   if (button.dataset.action) { const inventoryOpen=!$('#items-modal').hidden; performGameAction(button.dataset.action); if(inventoryOpen&&button.dataset.action==='usePotion')renderItems('items'); }
 });
+
+document.addEventListener('change',event=>{
+  if(event.target.matches('[data-theme-picker]')) applyTheme(event.target.value,true);
+});
+
+document.addEventListener('pointermove',event=>{
+  if(document.documentElement.dataset.theme!=='aurora'||event.pointerType==='touch')return;
+  const surface=event.target.closest('.card,.encounter,.log-panel,.prep-panel,.event-panel,.modal>div,.session-summary');
+  if(!surface)return;
+  const rect=surface.getBoundingClientRect();
+  surface.style.setProperty('--spot-x',`${event.clientX-rect.left}px`);
+  surface.style.setProperty('--spot-y',`${event.clientY-rect.top}px`);
+},{passive:true});
 
 document.addEventListener('keydown',event=>{
   const screen=currentScreen();

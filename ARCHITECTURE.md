@@ -29,6 +29,8 @@
 | `src/game.js` | 戦闘ステートマシンとラン進行 |
 | `src/ui.js` | DOM描画、入力、端末内保存 |
 
+表示テーマは`html[data-theme]`とCSS Custom Propertiesで切り替えます。既定テーマを基準とし、Aurora βだけが固定背景レイヤー、Glass、Spotlightを有効化します。選択はゲーム保存と分離した`formula-dungeon:theme:v1`へ保存します。`body[data-aurora-state]`は、ゲーム状態に応じて光の色・強度を拡張するための表示層の接続点です。
+
 将来のパーティー化では、`player`を同じcombatant形状の配列へ移し、行動の対象選択を追加します。式と敵行動はUIに依存しません。
 
 ## Data Flow
