@@ -1,5 +1,9 @@
 # Security
 
+## 移行中の位置づけ
+
+以下は旧Web参照実装の方針です。iOS版の診断情報送信、保存、バックアップとデータ削除は未決定です。旧WebのSentry導入をiOS版への採用決定として扱いません。
+
 ## Boundaries and data
 
 本MVPは認証・認可・秘密情報を持ちません。Sentry Error Monitoringのため、ブラウザで発生したJavaScriptエラーと診断に必要な技術情報をSentryへ送信します。ゲームの保存データは端末内に保持し、意図的に個人情報を収集しません。

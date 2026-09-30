@@ -7,11 +7,13 @@
 ## Project Context
 
 - **Project Name**: 深層演算域 — Infinite Formula Dungeon（package名: `infinite-formula-dungeon`）
-- **Purpose**: 敵の予兆と段階的に開示される情報を読み、攻撃・防御・観察・スキル・逃走を選びながら無限階層を進む、1人用の数式戦略RPGをブラウザ向けに提供する。
-- **Primary Stack**: HTML5、CSS3、JavaScript（ES2022 native modules）の静的Webアプリ。バックエンドと外部ランタイム依存は持たず、Node.js標準test runnerでロジックを検証し、`localStorage`へ端末内データを保存する。
+- **Purpose**: 敵の予兆と段階的に開示される情報を読み、攻撃・防御・観察・スキル・逃走を選びながら無限階層を進む、1人用の数式戦略RPGをiOSアプリとして提供する。現在は既存ゲームロジックの文書化と仕様・開発方針の策定段階。
+- **Primary Stack**: iOS版はSwift・SwiftUIによるネイティブアプリ。具体的な構成・保存方式は未決定。旧参照実装はHTML5、CSS3、JavaScript（ES2022 native modules）で、Node.js標準test runnerと`localStorage`を使用する。旧Webコードの構造をiOS版の必須条件にしない。
 - **Main Domains**: ターン制戦闘、敵と予兆、観察・情報開示、階層進行、成長と専門強化、装備・特性・ショップ、イベント階層、階層変異、敵図鑑、ラン記録、ローカル保存。
-- **Expected Work**: ゲームバランスと数式の調整、戦闘・敵・報酬・成長要素の拡張、アクセシビリティとレスポンシブUIの改善、保存互換性、seed再現可能なロジックとテスト、関連する正本の更新。新領域や新技術も、プロジェクト目的との関係を確認できれば対象になり得る。
-- **Clearly Unrelated Examples**: 別製品固有のSwiftUI画面やXcode targetの修正、別サービス固有のNext.jsページ・API routeの変更、このRepositoryに存在しない別製品名・固有DB・固有ディレクトリ・固有クラスを複数前提とする作業。
+- **Expected Work**: ゲームバランスと数式の調整、戦闘・敵・報酬・成長要素の拡張、iOS向けの操作・アクセシビリティの設計、保存互換性、seed再現可能なロジックとテスト、関連する正本の更新。新領域や新技術も、プロジェクト目的との関係を確認できれば対象になり得る。
+- **Clearly Unrelated Examples**: このゲームと無関係な別製品固有のSwiftUI画面やXcode targetの修正、別サービス固有のNext.jsページ・API routeの変更、このRepositoryに存在しない別製品名・固有DB・固有ディレクトリ・固有クラスを複数前提とする作業。
+
+Web版は開発終了。旧コードは参照用に保持し、現在は仕様策定と最小戦闘の試作を進める。確定した仕様をSwiftの独立したゲームロジックへ移し、その後SwiftUIへ接続する。
 
 ## Project Context Guard
 
@@ -78,6 +80,10 @@ MISMATCHでは直ちに作業を停止し、ファイル変更、新規ファイ
 | `ARCHITECTURE.md` | 現在のシステム構造 |
 | `DOMAIN.md` | 業務概念・ルール |
 | `DATA_MODEL.md` | 永続化モデル |
+| `GAME_RULES.md` | 移行元の数式・処理順・境界条件 |
+| `GAME_CONTENT.md` | 移行元の敵・行動・アイテム定義 |
+| `IOS_DESIGN.md` | iOS試作の設計・実装範囲・検証手順 |
+| `DEVELOPMENT.md` | iOS版の仕様策定手順・未決定事項・依頼プロンプト |
 | `ROADMAP.md` | 今後の優先順位 |
 | `TESTING.md` | 検証方針 |
 | `SECURITY.md` | セキュリティ方針 |

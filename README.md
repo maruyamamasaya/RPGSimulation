@@ -1,28 +1,19 @@
 # 深層演算域 — Infinite Formula Dungeon
 
-敵の予兆と不完全な情報を読み、攻撃・防御・観察・逃走を選ぶ、ブラウザだけで遊べる無限ダンジョン型の数式戦略RPGです。
+敵の予兆と不完全な情報を読み、行動を選びながら無限階層を進む1人用の数式戦略RPG。Web版の開発を終了し、今後はiOSアプリとして進めます。現在はゲーム仕様を整理しながら、iOSの最小戦闘を試作しています。
 
-## 遊び方
+## 読む順序
 
-```bash
-npm run dev
-```
+1. [CURRENT.md](CURRENT.md): 現在の状態。
+2. [DOMAIN.md](DOMAIN.md): ゲームの目的と基本ルール。
+3. [GAME_RULES.md](GAME_RULES.md): 数式と処理順。
+4. [GAME_CONTENT.md](GAME_CONTENT.md): 敵・行動・アイテムの基準データ。
+5. [DEVELOPMENT.md](DEVELOPMENT.md): 決める事項、開発手順、依頼プロンプト。
 
-表示された `http://localhost:4173` を開いてください。インストールやビルドは不要です。
+## iOS試作
 
-- **攻撃**: SPを回復しつつ通常ダメージを与える
-- **防御**: そのターンの被ダメージを65%減らし、SPを回復する
-- **観察**: 攻撃を諦め、敵の数値・特性・次の行動を詳しくする
-- **スキル**: SPを使い、強打・応急手当・集中観察を行う
-- **逃走**: SPD差と観察の深さに基づく成功率で戦闘を離脱する（階層は進まない）
+Xcodeで`ios/InfiniteFormulaDungeon.xcodeproj`を開いてiPhone Simulatorを選びます。設計・範囲・検証手順は[IOS_DESIGN.md](IOS_DESIGN.md)を参照してください。コアテストは`swift test --package-path ios`で実行できます。
 
-敵を倒すと次の階へ進みます。死亡時はそのランを失いますが、最高到達階層と敵ごとの討伐知識はブラウザに残ります。
+## 旧実装の扱い
 
-## 検証
-
-```bash
-npm test
-npm run check
-```
-
-設計の正本は [DOMAIN.md](DOMAIN.md)、構造は [ARCHITECTURE.md](ARCHITECTURE.md)、今後の範囲は [ROADMAP.md](ROADMAP.md) を参照してください。
+`src/`、`tests/`とWeb資産は移行時の参照として残しています。iOS版は階層進行と成長を含む試作で、保存は未実装です。旧ロジックの検証は`npm test`、構文確認は`npm run check`で行えます。旧Webのローカル確認が必要な場合は`npm run dev`を使えますが、Web UIの改修は現在の開発対象ではありません。
