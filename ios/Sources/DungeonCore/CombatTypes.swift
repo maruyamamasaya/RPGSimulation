@@ -24,34 +24,35 @@ public struct Combatant: Codable, Equatable, Sendable {
     }
 }
 
-public enum BattleAction: String, CaseIterable, Sendable {
-    case attack, defend, observe, powerStrike, firstAid, focus, escape
+public enum BattleAction: String, CaseIterable, Codable, Sendable {
+    case attack, defend, observe, powerStrike, firstAid, focus, escape, arcaneBolt, piercingShot
 
     public var cost: Int {
         switch self {
         case .powerStrike: 8
         case .firstAid: 12
-        case .focus: 7
+        case .focus, .arcaneBolt: 7
+        case .piercingShot: 6
         default: 0
         }
     }
 }
 
-public enum EnemyIntent: String, CaseIterable, Sendable {
-    case strike, heavy, rest, guardEnemy, feint, lunge
+public enum EnemyIntent: String, CaseIterable, Codable, Sendable {
+    case strike, heavy, rest, guardEnemy, feint, lunge, bleedingStrike, weakeningFeint, breakingHeavy, slowingLunge
 
     public var multiplier: Double {
         switch self {
-        case .strike: 1
-        case .heavy: 1.75
-        case .feint: 1.25
-        case .lunge: 1.5
+        case .strike, .bleedingStrike: 1
+        case .heavy, .breakingHeavy: 1.75
+        case .feint, .weakeningFeint: 1.25
+        case .lunge, .slowingLunge: 1.5
         case .rest, .guardEnemy: 0
         }
     }
 }
 
-public enum BattlePhase: Equatable, Sendable {
+public enum BattlePhase: Codable, Equatable, Sendable {
     case fighting, won, lost, escaped
 }
 
@@ -62,6 +63,9 @@ public enum BattleEvent: Equatable, Sendable {
     case healed(Int)
     case observed(Int)
     case escapeFailed
+    case statusApplied(side: CombatSide, kind: StatusKind)
+    case statusDamage(side: CombatSide, amount: Int)
+    case affinity(DamageAttribute, multiplier: Double)
     case finished(BattlePhase)
 }
 
@@ -88,6 +92,12 @@ public enum AbilityEstimate: Sendable {
 
 public struct BattleSnapshot: Equatable, Sendable {
     public let player: Combatant
+    public let playerStatuses: [StatusKind: ActiveStatus]
+    public let enemyStatuses: [StatusKind: ActiveStatus]
+    public let weakness: DamageAttribute?
+    public let resistance: DamageAttribute?
+    public let resistanceKnown: Bool
+    public let attackAttribute: DamageAttribute
     public let enemyRank: EnemyRank
     public let enemyID: String
     public let enemyName: String

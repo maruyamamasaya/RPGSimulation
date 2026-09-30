@@ -4,7 +4,7 @@
 
 Swift PackageのDungeonCoreのBattleEngineとRunEngineが戦闘・ラン進行・報酬・成長・道具・乱数・式・公開情報を所有し、DungeonUIのSwiftUI画面が公開snapshotとeventを描画します。App targetは同じローカルPackageへ接続します。設計と試作の採用範囲、旧版との差異は[IOS_DESIGN.md](IOS_DESIGN.md)を参照してください。
 
-`ios/InfiniteFormulaDungeon.xcodeproj`はiPhone Simulatorでビルド可能な最小アプリです。試作はiOS 17以上で、配布版の最低OSは未決定。ラン進行は実装済みで、準備時チェックポイント保存を実装済みです。
+`ios/InfiniteFormulaDungeon.xcodeproj`はiPhone Simulatorでビルド可能な最小アプリです。試作はiOS 17以上で、配布版の最低OSは未決定。ラン進行は実装済みで、手動/自動中断保存と恒久メタを実装済みです。
 
 以下は保持している旧Web参照実装の構造です。
 

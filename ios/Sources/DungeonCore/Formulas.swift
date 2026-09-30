@@ -20,8 +20,8 @@ public enum Formulas {
             + log2(Double(max(0, kills)) + 1) * 0.09 + Double(observation) * 0.23))
     }
 
-    public static func escape(player: Combatant, enemy: Combatant, observation: Int, rank: EnemyRank = .normal) -> Double {
-        min(0.95, max(0.2, 0.5 + Double(player.speed - enemy.speed) / 100
+    public static func escape(player: Combatant, enemy: Combatant, observation: Int, rank: EnemyRank = .normal, playerSlow: Bool = false, enemySlow: Bool = false) -> Double {
+        min(0.95, max(0.2, 0.5 + Double((playerSlow ? rounded(Double(player.speed) * 0.85) : player.speed) - (enemySlow ? rounded(Double(enemy.speed) * 0.85) : enemy.speed)) / 100
             + Double(observation) * 0.08 + rank.escapeBonus))
     }
 }

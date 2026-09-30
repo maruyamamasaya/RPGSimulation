@@ -12,5 +12,6 @@ let package = Package(
         .target(name: "DungeonCore"),
         .target(name: "DungeonUI", dependencies: ["DungeonCore"], resources: [.process("Resources")]),
         .testTarget(name: "DungeonCoreTests", dependencies: ["DungeonCore"]),
+        .testTarget(name: "DungeonUITests", dependencies: ["DungeonUI", "DungeonCore"]),
     ]
 )

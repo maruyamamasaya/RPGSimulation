@@ -4,7 +4,7 @@ public protocol RandomSource: Sendable {
 }
 
 /// Mulberry32, matching the legacy generator's unsigned 32-bit operations.
-public struct SeededRandom: RandomSource, Equatable {
+public struct SeededRandom: RandomSource, Equatable, Codable {
     public private(set) var state: UInt32
 
     public init(seed: UInt32) {

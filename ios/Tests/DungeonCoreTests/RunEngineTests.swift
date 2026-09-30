@@ -12,7 +12,7 @@ final class RunEngineTests: XCTestCase {
     }
 
     func testVictoryPaysOnlyOnceAndAdvanceKeepsPlayer() {
-        var run = RunEngine(random: RunFixedRandom(), player: strongPlayer(hp: 50), strongChance: 0)
+        var run = RunEngine(random: RunFixedRandom(), player: strongPlayer(hp: 50), strongChance: 0, eventChance: 0)
         let events = run.perform(BattleAction.attack)
         XCTAssertTrue(events.contains { if case .reward = $0 { return true }; return false })
         XCTAssertEqual(run.snapshot.phase, .preparation)
@@ -31,7 +31,7 @@ final class RunEngineTests: XCTestCase {
     }
 
     func testTrainingReducesRewardAndAdvanceResetsRate() {
-        var run = RunEngine(random: RunFixedRandom(), player: strongPlayer(), strongChance: 0)
+        var run = RunEngine(random: RunFixedRandom(), player: strongPlayer(), strongChance: 0, eventChance: 0)
         _ = run.perform(BattleAction.attack)
         for _ in 0..<3 {
             _ = run.perform(RunAction.train)
@@ -44,7 +44,7 @@ final class RunEngineTests: XCTestCase {
     }
 
     func testLevelUpCarriesEXPAndFullyRecovers() {
-        var run = RunEngine(random: RunFixedRandom(), player: strongPlayer(hp: 50), strongChance: 0)
+        var run = RunEngine(random: RunFixedRandom(), player: strongPlayer(hp: 50), strongChance: 0, eventChance: 0)
         var events: [RunEvent] = []
         for _ in 0..<3 {
             events += run.perform(BattleAction.attack)
@@ -58,7 +58,7 @@ final class RunEngineTests: XCTestCase {
     }
 
     func testPotionPurchaseUseAndRejectionBoundaries() {
-        var run = RunEngine(random: RunFixedRandom(), player: strongPlayer(), strongChance: 0)
+        var run = RunEngine(random: RunFixedRandom(), player: strongPlayer(), strongChance: 0, eventChance: 0)
         XCTAssertTrue(run.perform(RunAction.buyPotion).isEmpty)
         for index in 0..<4 {
             _ = run.perform(BattleAction.attack)
@@ -68,21 +68,21 @@ final class RunEngineTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(gold, 45)
         XCTAssertEqual(run.perform(RunAction.buyPotion), [.potionPurchased])
         XCTAssertEqual(run.snapshot.gold, gold - 45)
-        XCTAssertEqual(run.snapshot.potions, 1)
+        XCTAssertEqual(run.snapshot.potions, 5)
         XCTAssertTrue(run.perform(RunAction.usePotion).isEmpty)
-        XCTAssertEqual(run.snapshot.potions, 1)
+        XCTAssertEqual(run.snapshot.potions, 5)
         _ = run.perform(RunAction.train)
         _ = run.perform(BattleAction.observe)
         _ = run.perform(BattleAction.attack)
         XCTAssertLessThan(run.snapshot.player.hp, run.snapshot.player.maxHP)
         XCTAssertFalse(run.perform(RunAction.usePotion).isEmpty)
-        XCTAssertEqual(run.snapshot.potions, 0)
+        XCTAssertEqual(run.snapshot.potions, 5)
         XCTAssertEqual(run.snapshot.player.hp, run.snapshot.player.maxHP)
         XCTAssertTrue(run.perform(RunAction.usePotion).isEmpty)
     }
 
     func testEscapeReturnsToSameFloorWithoutRewardOrExtraTurn() {
-        var run = RunEngine(random: RunFixedRandom(), strongChance: 0)
+        var run = RunEngine(random: RunFixedRandom(), strongChance: 0, eventChance: 0)
         _ = run.perform(BattleAction.escape)
         XCTAssertEqual(run.snapshot.phase, .evaded)
         XCTAssertEqual(run.snapshot.gold, 0)
@@ -102,8 +102,8 @@ final class RunEngineTests: XCTestCase {
     }
 
     func testFixedRunSeedAndActionsReproduceRewardsAndEncounters() {
-        var a = RunEngine(random: SeededRandom(seed: 99), player: strongPlayer(), strongChance: 0)
-        var b = RunEngine(random: SeededRandom(seed: 99), player: strongPlayer(), strongChance: 0)
+        var a = RunEngine(random: SeededRandom(seed: 99), player: strongPlayer(), strongChance: 0, eventChance: 0)
+        var b = RunEngine(random: SeededRandom(seed: 99), player: strongPlayer(), strongChance: 0, eventChance: 0)
         for _ in 0..<5 {
             XCTAssertEqual(a.perform(BattleAction.attack), b.perform(BattleAction.attack))
             XCTAssertEqual(a.snapshot.gold, b.snapshot.gold)
@@ -116,7 +116,7 @@ final class RunEngineTests: XCTestCase {
 
 extension RunEngineTests {
     func testStrongRanksAndEquipmentDoNotStackOrHealRepeatedly() {
-        var run = RunEngine(random: RunFixedRandom(), player: strongPlayer(), strongChance: 1)
+        var run = RunEngine(random: RunFixedRandom(), player: strongPlayer(), strongChance: 1, eventChance: 0)
         XCTAssertEqual(run.snapshot.battle.enemyRank, .aberrant)
         _ = run.perform(BattleAction.attack)
         XCTAssertGreaterThanOrEqual(run.snapshot.gold, 100)
@@ -136,7 +136,7 @@ extension RunEngineTests {
     }
 
     func testCheckpointRestoresNextEncounterAndRejectsInvalidData() throws {
-        var run = RunEngine(random: SeededRandom(seed: 42), player: strongPlayer(), strongChance: 0)
+        var run = RunEngine(random: SeededRandom(seed: 42), player: strongPlayer(), strongChance: 0, eventChance: 0)
         XCTAssertThrowsError(try run.saveData())
         _ = run.perform(BattleAction.attack)
         let data = try run.saveData()
@@ -150,14 +150,16 @@ extension RunEngineTests {
         var json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         json["version"] = 99
         XCTAssertThrowsError(try RunEngine<SeededRandom>(savedData: JSONSerialization.data(withJSONObject: json)))
-        json["version"] = 1; json["floor"] = -1
+        json["version"] = 2
+        var state = json["run"] as! [String: Any]
+        state["floor"] = -1; json["run"] = state
         XCTAssertThrowsError(try RunEngine<SeededRandom>(savedData: JSONSerialization.data(withJSONObject: json)))
     }
 
     func testAllSixEnemiesAppearAndMeterKeepsUnknownInformationHidden() {
         var ids = Set<String>()
         for seed: UInt32 in 1...100 {
-            let run = RunEngine(random: SeededRandom(seed: seed), strongChance: 0)
+            let run = RunEngine(random: SeededRandom(seed: seed), strongChance: 0, eventChance: 0)
             ids.insert(run.snapshot.battle.enemyID)
             XCTAssertNil(run.snapshot.battle.enemyHPFraction)
         }
@@ -177,7 +179,7 @@ extension RunEngineTests {
         _ = run.perform(BattleAction.attack)
         let restored = try RunEngine<SeededRandom>(savedData: run.saveData())
         XCTAssertEqual(restored.snapshot.battle.enemyName, name)
-        let normal = RunEngine(random: SeededRandom(seed: 27), strongChance: 0)
+        let normal = RunEngine(random: SeededRandom(seed: 27), strongChance: 0, eventChance: 0)
         XCTAssertFalse(normal.snapshot.battle.enemyName.hasPrefix("〈"))
     }
 }
